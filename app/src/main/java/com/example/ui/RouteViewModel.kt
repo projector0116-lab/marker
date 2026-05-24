@@ -116,22 +116,29 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     }
 
     fun ensureDynamicRoadNodes(pivot: GeoPoint) {
-        // We generate a beautiful virtual road passing through the pivot (e.g. running East-West)
+        // We generate a virtual road shifted slightly (e.g. 15-20m North) to simulate a real road near their house
         val lat = pivot.latitude
+        val roadLat = lat + 0.00018
         val lng = pivot.longitude
         val nodes = listOf(
-            GeoPoint(lat, lng - 0.04),
-            GeoPoint(lat, lng - 0.02),
-            pivot,
-            GeoPoint(lat, lng + 0.02),
-            GeoPoint(lat, lng + 0.04)
+            GeoPoint(roadLat, lng - 0.04),
+            GeoPoint(roadLat, lng - 0.02),
+            GeoPoint(roadLat, lng),
+            GeoPoint(roadLat, lng + 0.02),
+            GeoPoint(roadLat, lng + 0.04)
         )
-        selectedRoad.value = MockRoad(
+        val road = MockRoad(
             id = "real_gps_free",
             name = "フリー軌跡計測 (自律道路吸着中)",
             nodes = nodes,
             tunnelRanges = emptyList()
         )
+        selectedRoad.value = road
+
+        // If snapped mode is enabled, immediately lock the initial position to this road center
+        if (isSnapped.value) {
+            _currentLocation.value = road.snapPoint(pivot)
+        }
     }
 
     private fun resetToRoadStart() {
@@ -182,6 +189,17 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         _totalDistanceKm.value = 0.0
         _averageSpeedKmh.value = 0.0
         _durationSeconds.value = 0L
+
+        // Snap immediately to nearest road center on start
+        if (isSnapped.value) {
+            val road = selectedRoad.value
+            if (road.nodes.isNotEmpty()) {
+                val current = _currentLocation.value
+                val snapped = road.snapPoint(current)
+                _currentLocation.value = snapped
+                Log.d("RouteViewModel", "Snapped starting location to road: $snapped")
+            }
+        }
 
         // Start duration timer
         startRecordingTimer()

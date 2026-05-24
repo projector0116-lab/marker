@@ -182,7 +182,7 @@ fun RouteTrackerApp(
         )
 
         // --------------------------------------------------------------------
-        // Component 2: Header Overlay Panel (Status & Road Selection)
+        // Component 2: Unified Header Dashboard (Fulfills no-Toyota, no-map-select, no-voice-guidance and no-overlap requests)
         // --------------------------------------------------------------------
         Column(
             modifier = Modifier
@@ -191,186 +191,161 @@ fun RouteTrackerApp(
                 .align(Alignment.TopCenter),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Toyota T-Connect Navigation System Bar
+            // Unified Premium Dashboard Card (Speedometer + TRIP Metrics)
             Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep premium dark theme
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, Color(0xFFC20505), RoundedCornerShape(12.dp))
+                    .border(2.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                    .testTag("dashboard_hud")
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                        .padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Left Side: compact speedometer and ECO lamp
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(60.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color(0xFF1E293B),
+                                strokeWidth = 5.dp
+                            )
+                            val progressValue = (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat()
+                            val arcColor = when {
+                                currentSpeedKmh > 80f -> Color(0xFFEF4444) // Red alerts
+                                currentSpeedKmh > 50f -> Color(0xFFF59E0B) // Amber
+                                else -> Color(0xFF10B981) // Crisp Hybrid Green
+                            }
+                            CircularProgressIndicator(
+                                progress = { progressValue },
+                                modifier = Modifier.fillMaxSize(),
+                                color = arcColor,
+                                strokeWidth = 5.dp,
+                                strokeCap = StrokeCap.Round
+                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = String.format("%.0f", currentSpeedKmh),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 20.sp
+                                )
+                                Text(
+                                    text = "km/h",
+                                    fontSize = 7.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+
+                        // ECO Drive Badge
+                        val ecoColor = when {
+                            currentSpeedKmh <= 0.1 -> Color(0xFF64748B) // Idle Grey
+                            currentSpeedKmh in 1.0..60.0 -> Color(0xFF10B981) // Vivid Emerald ECO
+                            else -> Color(0xFFF59E0B) // Amber Power
+                        }
+                        val ecoText = when {
+                            currentSpeedKmh <= 0.1 -> "READY"
+                            currentSpeedKmh in 1.0..60.0 -> "ECO"
+                            else -> "POWER"
+                        }
+                        Box(
                             modifier = Modifier
-                                .background(Color(0xFFC20505), RoundedCornerShape(4.dp))
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(ecoColor.copy(alpha = 0.15f))
+                                .border(1.dp, ecoColor, RoundedCornerShape(6.dp))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "TOYOTA",
-                                color = Color.White,
+                                text = ecoText,
                                 fontSize = 8.sp,
                                 fontWeight = FontWeight.Black,
-                                letterSpacing = 1.sp
+                                color = ecoColor
                             )
                         }
-                        Text(
-                            text = "T-Connect スマートナビ GSI連動モデル",
-                            color = Color(0xFFE2E8F0),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
+
+                    // Divider
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFF10B981).copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                            .border(1.dp, Color(0xFF10B981), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = "GPS車道中央ロック常時有効",
-                            color = Color(0xFF34D399),
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
+                            .width(1.dp)
+                            .height(40.dp)
+                            .background(Color(0xFF334155))
+                    )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // GPS Tracker Title Card
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
-                    modifier = Modifier
-                        .weight(1.5f)
-                        .clickable { showRoadSelectorDialog = true }
-                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
-                        .testTag("route_selector")
-                ) {
+                    // Right Side: Metrics (TRIP, TIME, AVG)
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.DirectionsCar,
-                            contentDescription = "GPS Tracker",
-                            tint = Color(0xFFC20505)
-                        )
-                        Column {
-                            Text(
-                                text = "タップでコース変更 ▾",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFC20505)
-                            )
-                            Text(
-                                text = selectedRoad.name.substringBefore(" ("),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color(0xFF0F172A),
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.size(8.dp))
-
-                // Saved Route History Button trigger
-                Button(
-                    onClick = { showHistorySheet = true },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFAFFFFFF)),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
-                    modifier = Modifier
-                        .height(52.dp)
-                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
-                        .testTag("history_button")
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.SpaceAround,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.History, contentDescription = "History", tint = Color(0xFF10B981))
-                        Text(
-                            text = "履歴 (${savedRoutes.size})",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A)
-                        )
+                        // Trip distance
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "走行距離 (TRIP)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    text = String.format("%.2f", totalDistanceKm),
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF10B981),
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(text = " km", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                            }
+                        }
+
+                        // Elapsed Timer
+                        val minutes = durationSeconds / 60
+                        val seconds = durationSeconds % 60
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "計測時間 (TIME)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                            Text(
+                                text = String.format("%02d:%02d", minutes, seconds),
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
+                        // Avg Speed
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "平均速度 (AVG)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    text = String.format("%.1f", averageSpeedKmh),
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(text = " km/h", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                            }
+                        }
                     }
                 }
             }
 
-            // Toyota Intelligent Voice Guidance Display Panel
-            val voiceGuidanceText = when (gpsStatus) {
-                GpsStatus.EXCELLENT -> "🔊 案内ガイダンス：GPS信号受信中。車道中央ロックが働いています。移動中も道路の真ん中をキープします。"
-                GpsStatus.RAW_ONLY -> "🔊 案内ガイダンス：自律ロック解除。GPSの生測位位置でトレースを行います。"
-                GpsStatus.EXTRAPOLATING_TUNNEL -> "🔊 案内ガイダンス：トンネルに進入しました。自律推測航法に切り替え、安定した位置表示を継続します。"
-                GpsStatus.PAUSED -> "🔊 案内ガイダンス：記録を一時停止しています。"
-                GpsStatus.STOPPED -> {
-                    if (selectedRoad.id == "real_gps_free") {
-                        "🔊 案内ガイダンス：お家の中にいても、自律道路を目の前に即時生成。最初からピッタリ道路の真ん中から愛車マークが案内開始します。"
-                    } else {
-                        "🔊 案内ガイダンス：目的地を設定しました。「リアルGPS計測」を押すと、車道中央ロック付きで現在地から追従を開始します。"
-                    }
-                }
-            }
-
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, Color(0xFF334155), RoundedCornerShape(12.dp))
-            ) {
-                Row(
-                    modifier = Modifier.padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .background(Color(0xFFC20505).copy(alpha = 0.2f), CircleShape)
-                            .padding(6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.VolumeUp,
-                            contentDescription = "Voice Guide",
-                            tint = Color(0xFFEF4444),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    Text(
-                        text = voiceGuidanceText,
-                        color = Color(0xFFF1F5F9),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 15.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            // Active State Status Tag bar (Exchanges between locks, wiggles or tunnel supplemental extrapolation!)
+            // Lower Status & History trigger bar
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 // Main Tracker Status Indicator
                 val statusBg = when (gpsStatus) {
@@ -388,11 +363,11 @@ fun RouteTrackerApp(
                     GpsStatus.STOPPED -> Color(0xFFE2E8F0)
                 }
                 val statusText = when (gpsStatus) {
-                    GpsStatus.EXCELLENT -> "GSIロードロック (道路のド真ん中追従)"
+                    GpsStatus.EXCELLENT -> "車道中央ロック追従中"
                     GpsStatus.RAW_ONLY -> "GPS生座標トレース (補正なし)"
-                    GpsStatus.EXTRAPOLATING_TUNNEL -> "トンネル自律補完（ToyotaスマートGPS）🛰️"
+                    GpsStatus.EXTRAPOLATING_TUNNEL -> "トンネル自律補完（GPS補正）🛰️"
                     GpsStatus.PAUSED -> "記録一時停止中"
-                    GpsStatus.STOPPED -> "待機中 - 近くまたは任意の道路からナビ開始できます"
+                    GpsStatus.STOPPED -> "待機中 - 端末のGPSで自動追従します"
                 }
                 val statusColor = when (gpsStatus) {
                     GpsStatus.EXCELLENT -> Color(0xFF15803D)
@@ -408,14 +383,16 @@ fun RouteTrackerApp(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
+                        .height(38.dp)
                         .border(1.dp, statusBorder, RoundedCornerShape(12.dp))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Pulsating or stateful beacon dot
                         val infiniteTransition = rememberInfiniteTransition(label = "beacon")
                         val beaconAlpha by infiniteTransition.animateFloat(
                             initialValue = 0.3f,
@@ -429,7 +406,7 @@ fun RouteTrackerApp(
 
                         Box(
                             modifier = Modifier
-                                .size(8.dp)
+                                .size(6.dp)
                                 .clip(CircleShape)
                                 .background(
                                     if (gpsStatus != GpsStatus.STOPPED && gpsStatus != GpsStatus.PAUSED) {
@@ -443,9 +420,39 @@ fun RouteTrackerApp(
                         Text(
                             text = statusText,
                             color = statusColor,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
+                            maxLines = 1
+                        )
+                    }
+                }
+
+                // Saved Route History Button trigger
+                Button(
+                    onClick = { showHistorySheet = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFAFFFFFF)),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
+                    modifier = Modifier
+                        .height(38.dp)
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                        .testTag("history_button")
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.History,
+                            contentDescription = "History",
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "履歴 (${savedRoutes.size})",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
                         )
                     }
                 }
@@ -456,11 +463,14 @@ fun RouteTrackerApp(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7)),
                         modifier = Modifier
+                            .height(38.dp)
                             .clickable { viewModel.selectOverlayRoute(null) }
                             .border(1.dp, Color(0xFF86EFAC), RoundedCornerShape(12.dp))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .padding(horizontal = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
@@ -468,7 +478,7 @@ fun RouteTrackerApp(
                             Text(
                                 text = "履歴表示OFF",
                                 color = Color(0xFF15803D),
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -529,226 +539,6 @@ fun RouteTrackerApp(
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                    }
-                }
-            }
-        }
-
-        // --------------------------------------------------------------------
-        // Component 3: Left floating panel Speedometer & Compass Ring
-        // Fulfills "左下に速度がでるようにしてください" (Speedometer on the bottom-left)
-        // --------------------------------------------------------------------
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 120.dp) // Offset above pedal/simulation tray
-                .width(140.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // Speedometer HUD Dial Card
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep premium dark theme
-                modifier = Modifier
-                    .border(2.dp, Color(0xFF334155), RoundedCornerShape(24.dp))
-                    .testTag("speedometer")
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(90.dp)
-                    ) {
-                        // Background circle gauge tracker
-                        CircularProgressIndicator(
-                            progress = { 1f },
-                            modifier = Modifier.fillMaxSize(),
-                            color = Color(0xFF1E293B),
-                            strokeWidth = 6.dp
-                        )
-
-                        // Glowing speed arc
-                        val progressValue = (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat()
-                        val arcColor = when {
-                            currentSpeedKmh > 80f -> Color(0xFFEF4444) // Red alerts
-                            currentSpeedKmh > 50f -> Color(0xFFF59E0B) // Amber
-                            else -> Color(0xFF10B981) // Crisp Toyota Hybrid Green!
-                        }
-
-                        CircularProgressIndicator(
-                            progress = { progressValue },
-                            modifier = Modifier.fillMaxSize(),
-                            color = arcColor,
-                            strokeWidth = 6.dp,
-                            strokeCap = StrokeCap.Round
-                        )
-
-                        // Speed Readout Digits
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = String.format("%.0f", currentSpeedKmh),
-                                fontSize = 34.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color.White,
-                                fontFamily = FontFamily.Monospace,
-                                lineHeight = 34.sp
-                            )
-                            Text(
-                                text = "km/h",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF94A3B8)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.size(6.dp))
-
-                    Text(
-                        text = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) "補完速度ロック" else "実測スピード",
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color(0xFFF97316) else Color(0xFF94A3B8)
-                    )
-
-                    Spacer(modifier = Modifier.size(4.dp))
-
-                    // Toyota Hybrid ECO DRIVE indicator lamp widget
-                    val ecoColor = when {
-                        currentSpeedKmh <= 0.1 -> Color(0xFF64748B) // Idle Grey
-                        currentSpeedKmh in 1.0..60.0 -> Color(0xFF10B981) // Vivid Emerald ECO lamp
-                        else -> Color(0xFFF59E0B) // Amber Power lamp
-                    }
-                    val ecoText = when {
-                        currentSpeedKmh <= 0.1 -> "READY"
-                        currentSpeedKmh in 1.0..60.0 -> "ECO DRIVE"
-                        else -> "POWER MODE"
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(ecoColor.copy(alpha = 0.15f))
-                            .border(1.dp, ecoColor, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(5.dp)
-                                    .clip(CircleShape)
-                                    .background(ecoColor)
-                            )
-                            Text(
-                                text = ecoText,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Black,
-                                color = ecoColor
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // --------------------------------------------------------------------
-        // Component 4: Dashboard Panel (走行距離 details metrics)
-        // Fulfills "走行距離も併せて表示するダッシュボード機能も追加してほしい"
-        // --------------------------------------------------------------------
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 120.dp)
-                .width(200.dp)
-                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(20.dp))
-                .testTag("dashboard_hud")
-        ) {
-            Column(
-                modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(Icons.Default.Speed, contentDescription = "Distance", tint = Color(0xFFEA580C), modifier = Modifier.size(16.dp))
-                    Text(
-                        text = "ダッシュボード",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = Color(0xFF0F172A)
-                    )
-                }
-
-                HorizontalDivider(color = Color(0xFFE2E8F0))
-
-                // 2.1 走行距離 Distance
-                Column {
-                    Text(text = "走行距離 (TRIP)", fontSize = 9.sp, color = Color(0xFF64748B))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = String.format("%.2f", totalDistanceKm),
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Black,
-                            color = Color(0xFF16A34A),
-                            fontFamily = FontFamily.Monospace,
-                            lineHeight = 24.sp
-                        )
-                        Text(text = "km", fontSize = 11.sp, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // 2.2 平均速度 Average speed
-                Column {
-                    Text(text = "平均速度 (AVG)", fontSize = 9.sp, color = Color(0xFF64748B))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        Text(
-                            text = String.format("%.1f", averageSpeedKmh),
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A),
-                            fontFamily = FontFamily.Monospace
-                        )
-                        Text(text = "km/h", fontSize = 10.sp, color = Color(0xFF64748B))
-                    }
-                }
-
-                // 2.3 経過時間 Elapsed timer
-                val minutes = durationSeconds / 60
-                val seconds = durationSeconds % 60
-                Column {
-                    Text(text = "計測時間 (TIME)", fontSize = 9.sp, color = Color(0xFF64748B))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Timer", tint = Color(0xFF64748B), modifier = Modifier.size(11.dp))
-                        Text(
-                            text = String.format("%02d:%02d", minutes, seconds),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F172A),
-                            fontFamily = FontFamily.Monospace,
-                        )
                     }
                 }
             }
