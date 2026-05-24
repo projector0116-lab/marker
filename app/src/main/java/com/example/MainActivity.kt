@@ -615,12 +615,12 @@ fun RouteTrackerApp(
         }
 
         // --------------------------------------------------------------------
-        // Floating map utility buttons (zoom + autoCenter) in the right middle
+        // Floating map utility buttons (zoom + autoCenter) in the right middle (offset vertically to prevent HUD overlap)
         // --------------------------------------------------------------------
         Column(
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 12.dp),
+                .align(Alignment.TopEnd)
+                .padding(top = 295.dp, end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Recenter Lock anchor
@@ -931,8 +931,9 @@ fun RouteTrackerApp(
                             // 3. Save & Stop trigger
                             Button(
                                 onClick = {
-                                    customSaveName = ""
-                                    showSaveDialog = true
+                                    // Automatically save route details and end session to fully fulfill automated saving requirement
+                                    viewModel.stopTracking(saveAutomatically = true)
+                                    Toast.makeText(context, "走行データを自動保存しました！(履歴から再生・マップ重ね合わせ可能です)", Toast.LENGTH_LONG).show()
                                 },
                                 shape = RoundedCornerShape(14.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
@@ -944,8 +945,8 @@ fun RouteTrackerApp(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Color.White)
-                                    Text("保存して終了", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Icon(Icons.Default.Stop, contentDescription = "Stop & Auto Save", tint = Color.White)
+                                    Text("記録終了 (自動保存)", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -1873,6 +1874,150 @@ fun RouteTrackerApp(
                 shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(20.dp))
             )
+        }
+    }
+}
+
+// ============================================================================
+// MODULAR REUSABLE CUSTOMIZABLE HUD COMPONENTS
+// ============================================================================
+@Composable
+fun SpeedometerHUD(
+    currentSpeedKmh: Double,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = modifier
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size(60.dp)
+        ) {
+            CircularProgressIndicator(
+                progress = { 1f },
+                modifier = Modifier.fillMaxSize(),
+                color = Color(0xFF1E293B),
+                strokeWidth = 5.dp
+            )
+            val progressValue = (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat()
+            val arcColor = when {
+                currentSpeedKmh > 80f -> Color(0xFFEF4444) // Red alerts
+                currentSpeedKmh > 50f -> Color(0xFFF59E0B) // Amber
+                else -> Color(0xFF10B981) // Crisp Hybrid Green
+            }
+            CircularProgressIndicator(
+                progress = { progressValue },
+                modifier = Modifier.fillMaxSize(),
+                color = arcColor,
+                strokeWidth = 5.dp,
+                strokeCap = StrokeCap.Round
+            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = String.format(Locale.US, "%.0f", currentSpeedKmh),
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 19.sp
+                )
+                Text(
+                    text = "km/h",
+                    fontSize = 7.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF94A3B8)
+                )
+            }
+        }
+
+        // ECO Drop Badge
+        val ecoColor = when {
+            currentSpeedKmh <= 0.1 -> Color(0xFF64748B) // Idle Grey
+            currentSpeedKmh in 1.0..60.0 -> Color(0xFF10B981) // Vivid Emerald ECO
+            else -> Color(0xFFF59E0B) // Amber Power
+        }
+        val ecoText = when {
+            currentSpeedKmh <= 0.1 -> "READY"
+            currentSpeedKmh in 1.0..60.0 -> "ECO"
+            else -> "POWER"
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(ecoColor.copy(alpha = 0.15f))
+                .border(1.dp, ecoColor, RoundedCornerShape(6.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = ecoText,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                color = ecoColor
+            )
+        }
+    }
+}
+
+@Composable
+fun MetricsHUD(
+    totalDistanceKm: Double,
+    durationSeconds: Long,
+    averageSpeedKmh: Double,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Trip distance
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = "走行距離 (TRIP)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = String.format(Locale.US, "%.2f", totalDistanceKm),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color(0xFF10B981),
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(text = " km", fontSize = 8.sp, color = Color(0xFF94A3B8))
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Elapsed Timer
+        val minutes = durationSeconds / 60
+        val seconds = durationSeconds % 60
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = "計測時間 (TIME)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+            Text(
+                text = String.format(Locale.US, "%02d:%02d", minutes, seconds),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Avg Speed
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = "平均速度 (AVG)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = String.format(Locale.US, "%.1f", averageSpeedKmh),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontFamily = FontFamily.Monospace
+                )
+                Text(text = " km/h", fontSize = 8.sp, color = Color(0xFF94A3B8))
+            }
         }
     }
 }

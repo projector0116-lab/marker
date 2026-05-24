@@ -609,14 +609,28 @@ fun ScenicMapView(
                     if (isSelected) {
                         drawPath(
                             path = rPath,
-                            color = Color(0xFFFBBF24),
+                            color = Color(0xFFFBBF24), // Selected: bright yellow stripe
                             style = Stroke(
-                                width = 1.5.dp.toPx(),
+                                width = 1.6.dp.toPx(),
                                 cap = StrokeCap.Round,
                                 join = StrokeJoin.Round,
                                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 15f), 0f)
                             )
                         )
+                    } else {
+                        drawPath(
+                            path = rPath,
+                            color = Color.White.copy(alpha = 0.5f), // Unselected: subtle white dashed center dividing line
+                            style = Stroke(
+                                width = 1.0.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 12f), 0f)
+                            )
+                        )
+                    }
+
+                    if (isSelected) {
 
                         // 4. Render Tunnel tubes (Overlay dark mountain tubes with orange caution lines)
                         road.tunnelRanges.forEach { tRange ->
@@ -1055,6 +1069,51 @@ fun ScenicMapView(
 
             val currentBeaconPt = project(currentLocation.latitude, currentLocation.longitude)
 
+            // Dynamic highway driving target/lock HUD crosshair showing the snapped road center exactly
+            if (gpsStatus == GpsStatus.EXCELLENT) {
+                // Outer dashed target lock ring
+                drawCircle(
+                    color = Color(0xFFE11D48), // Neon crimson lock target
+                    radius = 22.dp.toPx(),
+                    center = currentBeaconPt,
+                    style = Stroke(
+                        width = 1.5.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+                    )
+                )
+
+                // High-fidelity target intersecting crosshairs
+                drawLine(
+                    color = Color(0xFFE11D48),
+                    start = Offset(currentBeaconPt.x - 26.dp.toPx(), currentBeaconPt.y),
+                    end = Offset(currentBeaconPt.x + 26.dp.toPx(), currentBeaconPt.y),
+                    strokeWidth = 1.5.dp.toPx()
+                )
+                drawLine(
+                    color = Color(0xFFE11D48),
+                    start = Offset(currentBeaconPt.x, currentBeaconPt.y - 26.dp.toPx()),
+                    end = Offset(currentBeaconPt.x, currentBeaconPt.y + 26.dp.toPx()),
+                    strokeWidth = 1.5.dp.toPx()
+                )
+
+                // Visual reading label
+                drawIntoCanvas { canvas ->
+                    val lockTxtPaint = Paint().apply {
+                        color = android.graphics.Color.parseColor("#E11D48")
+                        textSize = 21f
+                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                        textAlign = Paint.Align.CENTER
+                        setShadowLayer(4f, 0f, 2f, android.graphics.Color.WHITE)
+                    }
+                    canvas.nativeCanvas.drawText(
+                        "車道中央ロック (Snapped)",
+                        currentBeaconPt.x,
+                        currentBeaconPt.y - 30.dp.toPx(),
+                        lockTxtPaint
+                    )
+                }
+            }
+
             // Dynamic GPS beacon circles
             drawCircle(
                 color = Color(0xFF10B981).copy(alpha = animatedAlpha),
@@ -1106,13 +1165,13 @@ fun ScenicMapView(
         // COGNITIVE METRICS OVERLAYS & CONTROLS HUD
         // ==========================================
 
-        // Coordinates Panel Card (Top-right)
+        // Coordinates Panel Card (Top-right) - Safely offset vertically to stop clashing with top controls
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xEBFFFFFF)),
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 115.dp, end = 12.dp)
+                .padding(top = 185.dp, end = 12.dp)
                 .border(1.dp, Color(0x3364748B), RoundedCornerShape(12.dp))
         ) {
             Column(
@@ -1168,11 +1227,11 @@ fun ScenicMapView(
             }
         }
 
-        // Adaptive Map Scale HUD indicator (Bottom-Start corner)
+        // Adaptive Map Scale HUD indicator (Top-Start corner below header, safe from bottom clutters)
         Box(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 125.dp)
+                .align(Alignment.TopStart)
+                .padding(start = 12.dp, top = 185.dp)
                 .background(Color(0xBB334155), RoundedCornerShape(4.dp))
                 .padding(horizontal = 6.dp, vertical = 2.dp)
         ) {
@@ -1202,15 +1261,15 @@ fun ScenicMapView(
             }
         }
 
-        // Float Re-centering Button action
+        // Float Re-centering Button action - Repositioned horizontally on Top Center under status row for zero overlaps
         if (!autoCenter) {
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(12.dp))
+                    .align(Alignment.TopCenter)
+                    .padding(top = 185.dp)
+                    .border(1.5.dp, Color(0xFF1D4ED8), RoundedCornerShape(12.dp))
                     .clickable { onReCenter?.invoke() }
             ) {
                 Row(
