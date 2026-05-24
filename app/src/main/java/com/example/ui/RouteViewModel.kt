@@ -109,8 +109,6 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     private var isSimulationRunning = false
 
     // Last known telemetry before entering tunnel
-    private val _bearing = MutableStateFlow(0f)
-    val bearing: StateFlow<Float> = _bearing.asStateFlow()
     private var lastValidHeadingDegrees = 90.0
     private var lastSpeedKmh = 45.0
 
@@ -388,7 +386,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                     }
 
                     viewModelScope.launch {
-                        processIncomingLocation(location.latitude, location.longitude, location.speed * 3.6, location.bearing)
+                        processIncomingLocation(location.latitude, location.longitude, location.speed * 3.6)
                     }
                 }
             }
@@ -418,13 +416,10 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         lat: Double,
         lng: Double,
         rawSpeedKmh: Double,
-        forceRecord: Boolean = true,
-        bearing: Float = 0f
+        forceRecord: Boolean = true
     ) {
         if (_gpsStatus.value == GpsStatus.PAUSED || _gpsStatus.value == GpsStatus.STOPPED) return
-        
-        _bearing.value = bearing
-        
+
         var activeRoad = selectedRoad.value
         val incomingGeo = GeoPoint(lat, lng)
 
