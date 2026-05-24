@@ -115,9 +115,30 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         resetToRoadStart()
     }
 
+    fun ensureDynamicRoadNodes(pivot: GeoPoint) {
+        // We generate a beautiful virtual road passing through the pivot (e.g. running East-West)
+        val lat = pivot.latitude
+        val lng = pivot.longitude
+        val nodes = listOf(
+            GeoPoint(lat, lng - 0.04),
+            GeoPoint(lat, lng - 0.02),
+            pivot,
+            GeoPoint(lat, lng + 0.02),
+            GeoPoint(lat, lng + 0.04)
+        )
+        selectedRoad.value = MockRoad(
+            id = "real_gps_free",
+            name = "フリー軌跡計測 (自律道路吸着中)",
+            nodes = nodes,
+            tunnelRanges = emptyList()
+        )
+    }
+
     private fun resetToRoadStart() {
         val road = selectedRoad.value
-        if (road.nodes.isNotEmpty()) {
+        if (road.id == "real_gps_free") {
+            ensureDynamicRoadNodes(_currentLocation.value)
+        } else if (road.nodes.isNotEmpty()) {
             _currentLocation.value = road.nodes[0]
         }
         simIndex = 0
@@ -317,8 +338,54 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     private fun processIncomingLocation(lat: Double, lng: Double, rawSpeedKmh: Double) {
         if (_gpsStatus.value == GpsStatus.PAUSED || _gpsStatus.value == GpsStatus.STOPPED) return
 
-        // 1. Check if we are in tunnel. If auto tunnel is enabled and we approach a predetermined tunnel index, enter EXTRAPOLATING_TUNNEL!
-        val activeRoad = selectedRoad.value
+        var activeRoad = selectedRoad.value
+        val incomingGeo = GeoPoint(lat, lng)
+
+        // 1. If in real_gps_free mode and snapping is active, dynamically update the virtual road past the driver
+        if (activeRoad.id == "real_gps_free" && isSnapped.value && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
+            val currentList = _recordedPath.value
+            val heading = if (currentList.size >= 2) {
+                val pLast = currentList.last()
+                val pPrev = currentList[currentList.size - 2]
+                Math.atan2(pLast.longitude - pPrev.longitude, pLast.latitude - pPrev.latitude)
+            } else if (currentList.size == 1) {
+                val pLast = currentList.last()
+                Math.atan2(lng - pLast.longitude, lat - pLast.latitude)
+            } else {
+                Math.toRadians(90.0) // fallback to east-west
+            }
+
+            // Project 300 meters ahead so there is a road waiting
+            val speedMs = (rawSpeedKmh * 1000.0) / 3600.0
+            val projDist = if (speedMs > 2.0) speedMs * 20.0 else 300.0
+            val deltaLat = (projDist * cos(heading)) / 111120.0
+            val deltaLng = (projDist * sin(heading)) / (111120.0 * cos(Math.toRadians(lat)))
+
+            val ahead1 = GeoPoint(lat + deltaLat * 0.5, lng + deltaLng * 0.5)
+            val ahead2 = GeoPoint(lat + deltaLat, lng + deltaLng)
+
+            val newNodes = mutableListOf<GeoPoint>()
+            // Retain historical points to keep the road stable as they drive
+            val maxHistory = currentList.takeLast(12)
+            if (maxHistory.isNotEmpty()) {
+                newNodes.addAll(maxHistory.map { GeoPoint(it.latitude, it.longitude) })
+            } else {
+                newNodes.add(GeoPoint(lat - deltaLat * 0.5, lng - deltaLng * 0.5))
+            }
+            newNodes.add(incomingGeo)
+            newNodes.add(ahead1)
+            newNodes.add(ahead2)
+
+            selectedRoad.value = MockRoad(
+                id = "real_gps_free",
+                name = "フリー軌跡計測 (自律道路吸着中)",
+                nodes = newNodes,
+                tunnelRanges = emptyList()
+            )
+            activeRoad = selectedRoad.value
+        }
+
+        // 2. Check if we are in tunnel. If auto tunnel is enabled and we approach a predetermined tunnel index, enter EXTRAPOLATING_TUNNEL!
         if (isAutoTunnelEnabled.value && activeRoad.nodes.isNotEmpty()) {
             val simulatedTunnelDetection = activeRoad.isNodeIndexInTunnel(simIndex)
             if (simulatedTunnelDetection && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
@@ -332,9 +399,8 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             }
         }
 
-        // 2. Extrapolation handler or GPS Lock Snap
+        // 3. Extrapolation handler or GPS Lock Snap
         val finalPoint: RoutePoint
-        val incomingGeo = GeoPoint(lat, lng)
 
         if (_gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL) {
             // Tunnel Dead Reckoning is active!
@@ -572,6 +638,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                     val geo = GeoPoint(location.latitude, location.longitude)
                     _currentLocation.value = geo
                     Log.d("RouteViewModel", "Fetched startup location: $geo")
+                    ensureDynamicRoadNodes(geo)
                 } else {
                     // Cache is empty; actively request a single high-accuracy location update to lock position instantly
                     val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
@@ -580,7 +647,9 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                     val callback = object : LocationCallback() {
                         override fun onLocationResult(result: LocationResult) {
                             val loc = result.lastLocation ?: return
-                            _currentLocation.value = GeoPoint(loc.latitude, loc.longitude)
+                            val geo = GeoPoint(loc.latitude, loc.longitude)
+                            _currentLocation.value = geo
+                            ensureDynamicRoadNodes(geo)
                             client.removeLocationUpdates(this)
                         }
                     }
