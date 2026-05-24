@@ -580,8 +580,8 @@ fun ScenicMapView(
                             val prev = project(road.nodes[idx - 1].latitude, road.nodes[idx - 1].longitude)
                             val next = project(road.nodes[idx].latitude, road.nodes[idx].longitude)
                             // Add intermediate points
-                            for (k in 1..2) {
-                                val fraction = k / 3f
+                            for (k in 1..10) {
+                                val fraction = k / 11f
                                 val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
                                 lineTo(lerpPt.x, lerpPt.y)
                             }
@@ -650,8 +650,8 @@ fun ScenicMapView(
                                         val prev = project(road.nodes[i - 1].latitude, road.nodes[i - 1].longitude)
                                         val next = project(road.nodes[i].latitude, road.nodes[i].longitude)
                                         // Add intermediate points
-                                        for (k in 1..2) {
-                                            val fraction = k / 3f
+                                        for (k in 1..10) {
+                                            val fraction = k / 11f
                                             val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
                                             lineTo(lerpPt.x, lerpPt.y)
                                         }
@@ -727,8 +727,8 @@ fun ScenicMapView(
                         val prev = project(recordedPath[i - 1].latitude, recordedPath[i - 1].longitude)
                         val next = project(recordedPath[i].latitude, recordedPath[i].longitude)
                         // Add intermediate points to smoothen angles
-                        for (k in 1..2) {
-                            val fraction = k / 3f
+                        for (k in 1..10) {
+                            val fraction = k / 11f
                             val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
                             lineTo(lerpPt.x, lerpPt.y)
                         }
