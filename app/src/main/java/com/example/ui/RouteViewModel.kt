@@ -361,8 +361,28 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                 override fun onLocationResult(locationResult: LocationResult) {
                     val location = locationResult.lastLocation ?: return
                     lastGpsUpdateTime = System.currentTimeMillis()
+                    // Transition from Tunnel to GPS signal!
                     if (_gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL && isAutoTunnelEnabled.value) {
                         _gpsStatus.value = if (isSnapped.value && selectedRoad.value.nodes.isNotEmpty()) GpsStatus.EXCELLENT else GpsStatus.RAW_ONLY
+                        
+                        // Retroactively snap the last tunnel points if snapping is on, to ensure a smoother transition
+                        if (isSnapped.value) {
+                            val currentList = _recordedPath.value.toMutableList()
+                            val road = selectedRoad.value
+                            if (road.nodes.isNotEmpty()) {
+                                for (i in currentList.indices.reversed()) {
+                                    if (currentList[i].isInterpolated) {
+                                        val geo = GeoPoint(currentList[i].latitude, currentList[i].longitude)
+                                        val snapped = road.snapPoint(geo)
+                                        currentList[i] = currentList[i].copy(latitude = snapped.latitude, longitude = snapped.longitude)
+                                    } else {
+                                        // Stop at the first non-interpolated point
+                                        break
+                                    }
+                                }
+                                _recordedPath.value = currentList
+                            }
+                        }
                     }
 
                     viewModelScope.launch {

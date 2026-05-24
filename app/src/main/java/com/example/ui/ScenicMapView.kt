@@ -577,7 +577,14 @@ fun ScenicMapView(
                         val first = project(road.nodes[0].latitude, road.nodes[0].longitude)
                         moveTo(first.x, first.y)
                         for (idx in 1 until road.nodes.size) {
+                            val prev = project(road.nodes[idx - 1].latitude, road.nodes[idx - 1].longitude)
                             val next = project(road.nodes[idx].latitude, road.nodes[idx].longitude)
+                            // Add intermediate points
+                            for (k in 1..2) {
+                                val fraction = k / 3f
+                                val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
+                                lineTo(lerpPt.x, lerpPt.y)
+                            }
                             lineTo(next.x, next.y)
                         }
                     }
@@ -640,7 +647,14 @@ fun ScenicMapView(
                                     val start = project(road.nodes[rStart].latitude, road.nodes[rStart].longitude)
                                     moveTo(start.x, start.y)
                                     for (i in rStart + 1..rEnd) {
+                                        val prev = project(road.nodes[i - 1].latitude, road.nodes[i - 1].longitude)
                                         val next = project(road.nodes[i].latitude, road.nodes[i].longitude)
+                                        // Add intermediate points
+                                        for (k in 1..2) {
+                                            val fraction = k / 3f
+                                            val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
+                                            lineTo(lerpPt.x, lerpPt.y)
+                                        }
                                         lineTo(next.x, next.y)
                                     }
                                 }
@@ -710,7 +724,14 @@ fun ScenicMapView(
                     val origin = project(recordedPath[0].latitude, recordedPath[0].longitude)
                     moveTo(origin.x, origin.y)
                     for (i in 1 until recordedPath.size) {
+                        val prev = project(recordedPath[i - 1].latitude, recordedPath[i - 1].longitude)
                         val next = project(recordedPath[i].latitude, recordedPath[i].longitude)
+                        // Add intermediate points to smoothen angles
+                        for (k in 1..2) {
+                            val fraction = k / 3f
+                            val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
+                            lineTo(lerpPt.x, lerpPt.y)
+                        }
                         lineTo(next.x, next.y)
                     }
                 }
