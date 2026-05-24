@@ -1061,22 +1061,24 @@ fun ScenicMapView(
             val currentBeaconPt = project(currentLocation.latitude, currentLocation.longitude)
 
             // Dynamic GPS beacon circles
+            // Outer glow
             drawCircle(
-                color = Color(0xFF10B981).copy(alpha = animatedAlpha),
-                radius = animatedRadius.dp.toPx(),
+                color = Color(0xFF38BDF8).copy(alpha = animatedAlpha * 0.4f),
+                radius = animatedRadius.dp.toPx() * 1.5f,
                 center = currentBeaconPt
             )
 
-            // Inner Core Bead
+            // Core beacon circle
             drawCircle(
-                color = Color.White,
+                color = Color(0xFF38BDF8),
                 radius = 8.dp.toPx(),
                 center = currentBeaconPt
             )
 
+            // Inner styling core
             drawCircle(
-                color = Color(0xFF10B981), // Pure high-visibility Emerald Green for current trace
-                radius = 5.dp.toPx(),
+                color = Color.White.copy(alpha = 0.9f),
+                radius = 3.5.dp.toPx(),
                 center = currentBeaconPt
             )
 
@@ -1094,15 +1096,15 @@ fun ScenicMapView(
 
             rotate(degrees = currentBearingDegees, pivot = currentBeaconPt) {
                 val triPath = Path().apply {
-                    moveTo(currentBeaconPt.x, currentBeaconPt.y - 13.dp.toPx()) // Pointer Tip
-                    lineTo(currentBeaconPt.x - 7.dp.toPx(), currentBeaconPt.y + 9.dp.toPx())
-                    lineTo(currentBeaconPt.x, currentBeaconPt.y + 5.dp.toPx()) // Indent
-                    lineTo(currentBeaconPt.x + 7.dp.toPx(), currentBeaconPt.y + 9.dp.toPx())
+                    moveTo(currentBeaconPt.x, currentBeaconPt.y - 16.dp.toPx()) // Sharper Pointer Tip
+                    lineTo(currentBeaconPt.x - 6.dp.toPx(), currentBeaconPt.y + 6.dp.toPx())
+                    lineTo(currentBeaconPt.x, currentBeaconPt.y + 2.dp.toPx()) // Indent
+                    lineTo(currentBeaconPt.x + 6.dp.toPx(), currentBeaconPt.y + 6.dp.toPx())
                     close()
                 }
                 drawPath(
                     path = triPath,
-                    color = Color(0xFF1E3A8A) // Royal Blue Direction marker
+                    color = Color(0xFF3B82F6) // Brighter blue for the direction marker
                 )
             }
         }
