@@ -71,6 +71,12 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         isAutoTunnelEnabled.value = !isAutoTunnelEnabled.value
     }
 
+    // App Customization Settings State (User preferences)
+    val trailColorHex = MutableStateFlow("#1D4ED8") // Default Royal Blue
+    val isSpeedometerVisible = MutableStateFlow(true)
+    val isDistanceVisible = MutableStateFlow(true)
+    val hudPosition = MutableStateFlow("top") // Options: "top", "bottom_left", "bottom_right", "split"
+
     // Current operational state
     private val _gpsStatus = MutableStateFlow(GpsStatus.STOPPED)
     val gpsStatus: StateFlow<GpsStatus> = _gpsStatus.asStateFlow()
@@ -116,10 +122,35 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     }
 
     fun ensureDynamicRoadNodes(pivot: GeoPoint) {
-        // We generate a virtual road shifted slightly (e.g. 15-20m North) to simulate a real road near their house
         val lat = pivot.latitude
-        val roadLat = lat + 0.00018
         val lng = pivot.longitude
+
+        // Check if there is an actual preset road within 2km of pivot so we align to standard roads
+        var nearestPresetRoad: MockRoad? = null
+        var minPresetDistance = Double.MAX_VALUE
+        NavigationEngine.PRESET_ROADS.forEach { road ->
+            if (road.id != "real_gps_free") {
+                road.nodes.forEach { node ->
+                    val dist = pivot.distanceTo(node)
+                    if (dist < minPresetDistance) {
+                        minPresetDistance = dist
+                        nearestPresetRoad = road
+                    }
+                }
+            }
+        }
+
+        if (nearestPresetRoad != null && minPresetDistance < 2.0) {
+            val road = nearestPresetRoad!!
+            selectedRoad.value = road
+            if (isSnapped.value) {
+                _currentLocation.value = road.snapPoint(pivot)
+            }
+            return
+        }
+
+        // We generate a virtual road passing exactly through the pivot (running East-West) to align to a simulated street center
+        val roadLat = lat
         val nodes = listOf(
             GeoPoint(roadLat, lng - 0.04),
             GeoPoint(roadLat, lng - 0.02),
@@ -353,11 +384,25 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
      * Processes raw coordinates from real GPS or simulated paths.
      * Handles road snapping, distance math, speed, and appends to the track.
      */
-    private fun processIncomingLocation(lat: Double, lng: Double, rawSpeedKmh: Double) {
+    private fun processIncomingLocation(
+        lat: Double,
+        lng: Double,
+        rawSpeedKmh: Double,
+        forceRecord: Boolean = true
+    ) {
         if (_gpsStatus.value == GpsStatus.PAUSED || _gpsStatus.value == GpsStatus.STOPPED) return
 
         var activeRoad = selectedRoad.value
         val incomingGeo = GeoPoint(lat, lng)
+
+        // Avoid minor stationary GPS telemetry jitter/shaking when sitting inside the house
+        if (!isSimulationRunning) {
+            val distFromLast = incomingGeo.distanceTo(_currentLocation.value)
+            if (rawSpeedKmh < 1.5 && distFromLast < 0.005) {
+                // Ignore micro GPS drift updates when stationary
+                return
+            }
+        }
 
         // 1. If in real_gps_free mode and snapping is active, dynamically update the virtual road past the driver
         if (activeRoad.id == "real_gps_free" && isSnapped.value && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
@@ -457,7 +502,9 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             }
         }
 
-        appendPointToActiveTrail(finalPoint)
+        if (forceRecord) {
+            appendPointToActiveTrail(finalPoint)
+        }
     }
 
     /**
@@ -545,6 +592,9 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         simulationJob = viewModelScope.launch {
             val road = selectedRoad.value
             val roadLength = getRoadTotalLengthMeters(road)
+            val stepMs = 100L // 100ms step for buttery-smooth visual updates
+            val stepSec = stepMs / 1000.0 // 0.1s step size
+            var lastRecordTime = 0L
 
             // Simulate point iterations
             while (isSimulationRunning && _gpsStatus.value != GpsStatus.STOPPED) {
@@ -553,15 +603,14 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                     _currentSpeedKmh.value = currentSpeed
 
                     if (road.nodes.isNotEmpty()) {
-                        // Traverse distance based on exact speed (meters per second)
+                        // Traverse distance based on exact speed (meters per fraction of second)
                         val speedMs = (currentSpeed * 1000.0) / 3600.0
-                        simDistanceMeters += speedMs
+                        simDistanceMeters += speedMs * stepSec
 
                         if (roadLength > 0 && simDistanceMeters >= roadLength) {
                             // Reached the end of the road!
-                            // Capture final node and stop naturally
                             val lastNode = road.nodes.last()
-                            processIncomingLocation(lastNode.latitude, lastNode.longitude, currentSpeed)
+                            processIncomingLocation(lastNode.latitude, lastNode.longitude, currentSpeed, forceRecord = true)
                             stopTracking(saveAutomatically = true)
                             break
                         }
@@ -570,10 +619,22 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                         val (nextPoint, currentIndex) = getPositionAtDistance(road, simDistanceMeters)
                         simIndex = currentIndex
 
-                        processIncomingLocation(nextPoint.latitude, nextPoint.longitude, currentSpeed)
+                        val now = System.currentTimeMillis()
+                        // Record trail points exactly once per second to prevent route line congestion
+                        val recordNow = (now - lastRecordTime) >= 1000L
+                        if (recordNow) {
+                            lastRecordTime = now
+                        }
+
+                        processIncomingLocation(
+                            nextPoint.latitude,
+                            nextPoint.longitude,
+                            currentSpeed,
+                            forceRecord = recordNow
+                        )
                     }
                 }
-                delay(1000L) // Refresh rate once per second
+                delay(stepMs)
             }
         }
     }

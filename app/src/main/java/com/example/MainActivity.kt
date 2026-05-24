@@ -18,6 +18,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -97,6 +99,47 @@ fun RouteTrackerApp(
     val overlayRoute by viewModel.overlayRoute.collectAsState()
 
     // Local configuration controllers
+    val sharedPrefs = remember { context.getSharedPreferences("route_tracker_settings", android.content.Context.MODE_PRIVATE) }
+    
+    var routeColorChoice by remember {
+        mutableStateOf(sharedPrefs.getString("route_color_choice", "blue") ?: "blue")
+    }
+    var showSpeedometer by remember {
+        mutableStateOf(sharedPrefs.getBoolean("show_speedometer", true))
+    }
+    var showDistanceDashboard by remember {
+        mutableStateOf(sharedPrefs.getBoolean("show_distance_dashboard", true))
+    }
+    var layoutPresetChoices by remember {
+        mutableStateOf(sharedPrefs.getString("layout_preset", "unified_top") ?: "unified_top")
+    }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    fun updateRouteColorChoice(color: String) {
+        routeColorChoice = color
+        sharedPrefs.edit().putString("route_color_choice", color).apply()
+    }
+    fun updateShowSpeedometer(show: Boolean) {
+        showSpeedometer = show
+        sharedPrefs.edit().putBoolean("show_speedometer", show).apply()
+    }
+    fun updateShowDistanceDashboard(show: Boolean) {
+        showDistanceDashboard = show
+        sharedPrefs.edit().putBoolean("show_distance_dashboard", show).apply()
+    }
+    fun updateLayoutPreset(preset: String) {
+        layoutPresetChoices = preset
+        sharedPrefs.edit().putString("layout_preset", preset).apply()
+    }
+
+    val resolvedRouteColor = when (routeColorChoice) {
+        "green" -> Color(0xFF10B981)
+        "red" -> Color(0xFFEF4444)
+        "purple" -> Color(0xFF8B5CF6)
+        "orange" -> Color(0xFFF97316)
+        else -> Color(0xFF1D4ED8) // "blue"
+    }
+
     var zoomScale by remember { mutableStateOf(240000f) }
     var autoCenterMap by remember { mutableStateOf(true) }
     var showHistorySheet by remember { mutableStateOf(false) }
@@ -176,6 +219,7 @@ fun RouteTrackerApp(
             overlayRoutePoints = overlayRoute?.getPoints(),
             zoomScale = zoomScale,
             autoCenter = autoCenterMap,
+            routeColor = resolvedRouteColor,
             onMapDragged = { autoCenterMap = false },
             onReCenter = { autoCenterMap = true },
             modifier = Modifier.fillMaxSize()
@@ -191,150 +235,159 @@ fun RouteTrackerApp(
                 .align(Alignment.TopCenter),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Unified Premium Dashboard Card (Speedometer + TRIP Metrics)
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep premium dark theme
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(2.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
-                    .testTag("dashboard_hud")
-            ) {
-                Row(
+            val hasAnyHudVisible = showSpeedometer || showDistanceDashboard
+            if (layoutPresetChoices == "unified_top" && hasAnyHudVisible) {
+                // Unified Premium Dashboard Card (Speedometer + TRIP Metrics)
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep premium dark theme
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .border(2.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                        .testTag("dashboard_hud")
                 ) {
-                    // Left Side: compact speedometer and ECO lamp
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(60.dp)
-                        ) {
-                            CircularProgressIndicator(
-                                progress = { 1f },
-                                modifier = Modifier.fillMaxSize(),
-                                color = Color(0xFF1E293B),
-                                strokeWidth = 5.dp
-                            )
-                            val progressValue = (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat()
-                            val arcColor = when {
-                                currentSpeedKmh > 80f -> Color(0xFFEF4444) // Red alerts
-                                currentSpeedKmh > 50f -> Color(0xFFF59E0B) // Amber
-                                else -> Color(0xFF10B981) // Crisp Hybrid Green
-                            }
-                            CircularProgressIndicator(
-                                progress = { progressValue },
-                                modifier = Modifier.fillMaxSize(),
-                                color = arcColor,
-                                strokeWidth = 5.dp,
-                                strokeCap = StrokeCap.Round
-                            )
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text = String.format("%.0f", currentSpeedKmh),
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.White,
-                                    fontFamily = FontFamily.Monospace,
-                                    lineHeight = 20.sp
-                                )
-                                Text(
-                                    text = "km/h",
-                                    fontSize = 7.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF94A3B8)
-                                )
-                            }
-                        }
-
-                        // ECO Drive Badge
-                        val ecoColor = when {
-                            currentSpeedKmh <= 0.1 -> Color(0xFF64748B) // Idle Grey
-                            currentSpeedKmh in 1.0..60.0 -> Color(0xFF10B981) // Vivid Emerald ECO
-                            else -> Color(0xFFF59E0B) // Amber Power
-                        }
-                        val ecoText = when {
-                            currentSpeedKmh <= 0.1 -> "READY"
-                            currentSpeedKmh in 1.0..60.0 -> "ECO"
-                            else -> "POWER"
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(ecoColor.copy(alpha = 0.15f))
-                                .border(1.dp, ecoColor, RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = ecoText,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Black,
-                                color = ecoColor
-                            )
-                        }
-                    }
-
-                    // Divider
-                    Box(
                         modifier = Modifier
-                            .width(1.dp)
-                            .height(40.dp)
-                            .background(Color(0xFF334155))
-                    )
-
-                    // Right Side: Metrics (TRIP, TIME, AVG)
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.SpaceAround,
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = if (showSpeedometer && showDistanceDashboard) Arrangement.SpaceBetween else Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Trip distance
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "走行距離 (TRIP)", fontSize = 8.sp, color = Color(0xFF94A3B8))
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                Text(
-                                    text = String.format("%.2f", totalDistanceKm),
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color(0xFF10B981),
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(text = " km", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                        if (showSpeedometer) {
+                            // Left Side: compact speedometer and ECO lamp
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(60.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        progress = { 1f },
+                                        modifier = Modifier.fillMaxSize(),
+                                        color = Color(0xFF1E293B),
+                                        strokeWidth = 5.dp
+                                    )
+                                    val progressValue = (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat()
+                                    val arcColor = when {
+                                        currentSpeedKmh > 80f -> Color(0xFFEF4444) // Red alerts
+                                        currentSpeedKmh > 50f -> Color(0xFFF59E0B) // Amber
+                                        else -> Color(0xFF10B981) // Crisp Hybrid Green
+                                    }
+                                    CircularProgressIndicator(
+                                        progress = { progressValue },
+                                        modifier = Modifier.fillMaxSize(),
+                                        color = arcColor,
+                                        strokeWidth = 5.dp,
+                                        strokeCap = StrokeCap.Round
+                                    )
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = String.format("%.0f", currentSpeedKmh),
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color.White,
+                                            fontFamily = FontFamily.Monospace,
+                                            lineHeight = 20.sp
+                                        )
+                                        Text(
+                                            text = "km/h",
+                                            fontSize = 7.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+
+                                // ECO Drive Badge
+                                val ecoColor = when {
+                                    currentSpeedKmh <= 0.1 -> Color(0xFF64748B) // Idle Grey
+                                    currentSpeedKmh in 1.0..60.0 -> Color(0xFF10B981) // Vivid Emerald ECO
+                                    else -> Color(0xFFF59E0B) // Amber Power
+                                }
+                                val ecoText = when {
+                                    currentSpeedKmh <= 0.1 -> "READY"
+                                    currentSpeedKmh in 1.0..60.0 -> "ECO"
+                                    else -> "POWER"
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(ecoColor.copy(alpha = 0.15f))
+                                        .border(1.dp, ecoColor, RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = ecoText,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = ecoColor
+                                    )
+                                }
                             }
                         }
 
-                        // Elapsed Timer
-                        val minutes = durationSeconds / 60
-                        val seconds = durationSeconds % 60
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "計測時間 (TIME)", fontSize = 8.sp, color = Color(0xFF94A3B8))
-                            Text(
-                                text = String.format("%02d:%02d", minutes, seconds),
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                fontFamily = FontFamily.Monospace
+                        // Divider
+                        if (showSpeedometer && showDistanceDashboard) {
+                            Box(
+                                modifier = Modifier
+                                    .width(1.dp)
+                                    .height(40.dp)
+                                    .background(Color(0xFF334155))
                             )
                         }
 
-                        // Avg Speed
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(text = "平均速度 (AVG)", fontSize = 8.sp, color = Color(0xFF94A3B8))
-                            Row(verticalAlignment = Alignment.Bottom) {
-                                Text(
-                                    text = String.format("%.1f", averageSpeedKmh),
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                                Text(text = " km/h", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                        if (showDistanceDashboard) {
+                            // Right Side: Metrics (TRIP, TIME, AVG)
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Trip distance
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(text = "走行距離 (TRIP)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        Text(
+                                            text = String.format("%.2f", totalDistanceKm),
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFF10B981),
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        Text(text = " km", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                    }
+                                }
+
+                                // Elapsed Timer
+                                val minutes = durationSeconds / 60
+                                val seconds = durationSeconds % 60
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(text = "計測時間 (TIME)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                    Text(
+                                        text = String.format("%02d:%02d", minutes, seconds),
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+
+                                // Avg Speed
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(text = "平均速度 (AVG)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        Text(
+                                            text = String.format("%.1f", averageSpeedKmh),
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                        Text(text = " km/h", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                    }
+                                }
                             }
                         }
                     }
@@ -455,6 +508,23 @@ fun RouteTrackerApp(
                             color = Color(0xFF0F172A)
                         )
                     }
+                }
+
+                // Custom settings configure button right next to history
+                IconButton(
+                    onClick = { showSettingsDialog = true },
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(Color(0xFAFFFFFF), RoundedCornerShape(12.dp))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                        .testTag("settings_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        tint = Color(0xFF475569),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
 
                 // If historic overlay tracker is active, show overlay name dismiss key
@@ -594,6 +664,147 @@ fun RouteTrackerApp(
                     .border(1.dp, Color(0xFFE2E8F0), CircleShape)
             ) {
                 Icon(Icons.Default.Remove, contentDescription = "Zoom Out")
+            }
+
+            // Settings/Customizer Panel Gear
+            FloatingActionButton(
+                onClick = { showSettingsDialog = true },
+                containerColor = Color.White,
+                contentColor = Color(0xFF1E293B),
+                shape = CircleShape,
+                modifier = Modifier
+                    .size(42.dp)
+                    .border(1.dp, Color(0xFFE2E8F0), CircleShape)
+                    .testTag("settings_button")
+            ) {
+                Icon(Icons.Default.Settings, contentDescription = "Settings Option")
+            }
+        }
+
+        // ==========================================
+        // DYNAMIC CUSTOMIZABLE HUD PLACEMENTS (Bottom Left, Bottom Right, Split Layouts)
+        // ==========================================
+        if (layoutPresetChoices == "bottom_left" && (showSpeedometer || showDistanceDashboard)) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 240.dp) // Hover elegantly above control sheet
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    modifier = Modifier
+                        .wrapContentSize()
+                        .border(2.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                        .testTag("dashboard_hud_bottom_left")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (showSpeedometer) {
+                            SpeedometerHUD(currentSpeedKmh = currentSpeedKmh)
+                        }
+                        if (showSpeedometer && showDistanceDashboard) {
+                            HorizontalDivider(color = Color(0xFF334155), thickness = 1.dp)
+                        }
+                        if (showDistanceDashboard) {
+                            MetricsHUD(
+                                totalDistanceKm = totalDistanceKm,
+                                durationSeconds = durationSeconds,
+                                averageSpeedKmh = averageSpeedKmh
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (layoutPresetChoices == "bottom_right" && (showSpeedometer || showDistanceDashboard)) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 240.dp) // Hover elegantly above control sheet
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    modifier = Modifier
+                        .wrapContentSize()
+                        .border(2.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                        .testTag("dashboard_hud_bottom_right")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (showSpeedometer) {
+                            SpeedometerHUD(currentSpeedKmh = currentSpeedKmh)
+                        }
+                        if (showSpeedometer && showDistanceDashboard) {
+                            HorizontalDivider(color = Color(0xFF334155), thickness = 1.dp)
+                        }
+                        if (showDistanceDashboard) {
+                            MetricsHUD(
+                                totalDistanceKm = totalDistanceKm,
+                                durationSeconds = durationSeconds,
+                                averageSpeedKmh = averageSpeedKmh
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (layoutPresetChoices == "split") {
+            // Speedometer HUD on Left
+            if (showSpeedometer) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 12.dp, bottom = 240.dp)
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                        modifier = Modifier
+                            .wrapContentSize()
+                            .border(2.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                            .testTag("dashboard_hud_split_speed")
+                    ) {
+                        Box(modifier = Modifier.padding(12.dp)) {
+                            SpeedometerHUD(currentSpeedKmh = currentSpeedKmh)
+                        }
+                    }
+                }
+            }
+
+            // Metrics/Distance HUD on Right
+            if (showDistanceDashboard) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 12.dp, bottom = 240.dp)
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                        modifier = Modifier
+                            .wrapContentSize()
+                            .border(2.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                            .testTag("dashboard_hud_split_metrics")
+                    ) {
+                        Box(modifier = Modifier.padding(12.dp)) {
+                            MetricsHUD(
+                                totalDistanceKm = totalDistanceKm,
+                                durationSeconds = durationSeconds,
+                                averageSpeedKmh = averageSpeedKmh
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -821,6 +1032,505 @@ fun RouteTrackerApp(
                     }
                 }
             }
+        }
+
+        // --------------------------------------------------------------------
+        // Segment 2B: Customized Speedometer & Dashboard Float placements (Bottom Left/Right or Compact Left/Right views)
+        // --------------------------------------------------------------------
+        if (layoutPresetChoices == "split_bottom") {
+            if (showSpeedometer) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep premium dark theme
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 16.dp, bottom = 120.dp) // Offset above pedal/simulation tray
+                        .width(115.dp)
+                        .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
+                        .testTag("speedometer")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(64.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.fillMaxSize(),
+                                color = Color(0xFF1E293B),
+                                strokeWidth = 4.5.dp
+                            )
+                            val progressValue = (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat()
+                            val arcColor = when {
+                                currentSpeedKmh > 80f -> Color(0xFFEF4444)
+                                currentSpeedKmh > 50f -> Color(0xFFF59E0B)
+                                else -> Color(0xFF10B981)
+                            }
+                            CircularProgressIndicator(
+                                progress = { progressValue },
+                                modifier = Modifier.fillMaxSize(),
+                                color = arcColor,
+                                strokeWidth = 4.5.dp,
+                                strokeCap = StrokeCap.Round
+                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = String.format("%.0f", currentSpeedKmh),
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White,
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 22.sp
+                                )
+                                Text(
+                                    text = "km/h",
+                                    fontSize = 7.1.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.size(4.dp))
+                        // ECO badge
+                        val ecoColor = when {
+                            currentSpeedKmh <= 0.1 -> Color(0xFF64748B)
+                            currentSpeedKmh in 1.0..60.0 -> Color(0xFF10B981)
+                            else -> Color(0xFFF59E0B)
+                        }
+                        val ecoText = when {
+                            currentSpeedKmh <= 0.1 -> "READY"
+                            currentSpeedKmh in 1.0..60.0 -> "ECO"
+                            else -> "POWER"
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(ecoColor.copy(alpha = 0.15f))
+                                .border(1.dp, ecoColor, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text(ecoText, fontSize = 7.sp, fontWeight = FontWeight.Black, color = ecoColor)
+                        }
+                    }
+                }
+            }
+
+            if (showDistanceDashboard) {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = 120.dp)
+                        .width(160.dp)
+                        .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
+                        .testTag("dashboard_hud")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Default.Speed, contentDescription = "Dist", tint = Color(0xFFEA580C), modifier = Modifier.size(12.dp))
+                            Text("メーター", fontWeight = FontWeight.Bold, fontSize = 9.sp, color = Color.White)
+                        }
+                        HorizontalDivider(color = Color(0xFF1E293B))
+                        // TRIP
+                        Column {
+                            Text("走行距離", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                            Row(verticalAlignment = Alignment.Bottom) {
+                                Text(
+                                    text = String.format("%.2f", totalDistanceKm),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF10B981),
+                                    fontFamily = FontFamily.Monospace,
+                                    lineHeight = 18.sp
+                                )
+                                Text(" km", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                            }
+                        }
+                        // AVG Speed & TIME
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("平均速度", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text(String.format("%.1f", averageSpeedKmh) + "km/h", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
+                            }
+                            val min = durationSeconds / 60
+                            val sec = durationSeconds % 60
+                            Column {
+                                Text("計測時間", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text(String.format("%d:%02d", min, sec), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (layoutPresetChoices == "compact_left" && (showSpeedometer || showDistanceDashboard)) {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, bottom = 120.dp)
+                    .width(180.dp)
+                    .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (showSpeedometer) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(44.dp)) {
+                                CircularProgressIndicator(
+                                    progress = { (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat() },
+                                    modifier = Modifier.fillMaxSize(),
+                                    color = Color(0xFF10B981),
+                                    strokeWidth = 3.5.dp
+                                )
+                                Text(String.format("%.0f", currentSpeedKmh), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            }
+                            Column {
+                                Text("現在の速度", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text("km/h測位中", fontSize = 9.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        HorizontalDivider(color = Color(0xFF1E293B))
+                    }
+                    if (showDistanceDashboard) {
+                        Column {
+                            Text("走行距離 (TRIP)", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                            Text(String.format("%.2f km", totalDistanceKm), fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF10B981), fontFamily = FontFamily.Monospace)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("平均速度", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text(String.format("%.1f", averageSpeedKmh) + "km/h", fontSize = 10.sp, color = Color.White, fontFamily = FontFamily.Monospace)
+                            }
+                            val min = durationSeconds / 60
+                            val sec = durationSeconds % 60
+                            Column {
+                                Text("経過時間", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text(String.format("%02d:%02d", min, sec), fontSize = 10.sp, color = Color.White, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (layoutPresetChoices == "compact_right" && (showSpeedometer || showDistanceDashboard)) {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 120.dp)
+                    .width(180.dp)
+                    .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (showSpeedometer) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.size(44.dp)) {
+                                CircularProgressIndicator(
+                                    progress = { (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat() },
+                                    modifier = Modifier.fillMaxSize(),
+                                    color = Color(0xFF10B981),
+                                    strokeWidth = 3.5.dp
+                                )
+                                Text(String.format("%.0f", currentSpeedKmh), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Black)
+                            }
+                            Column {
+                                Text("現在の速度", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text("km/h測位中", fontSize = 9.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        HorizontalDivider(color = Color(0xFF1E293B))
+                    }
+                    if (showDistanceDashboard) {
+                        Column {
+                            Text("走行距離 (TRIP)", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                            Text(String.format("%.2f km", totalDistanceKm), fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color(0xFF10B981), fontFamily = FontFamily.Monospace)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("平均速度", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text(String.format("%.1f", averageSpeedKmh) + "km/h", fontSize = 10.sp, color = Color.White, fontFamily = FontFamily.Monospace)
+                            }
+                            val min = durationSeconds / 60
+                            val sec = durationSeconds % 60
+                            Column {
+                                Text("経過時間", fontSize = 7.sp, color = Color(0xFF94A3B8))
+                                Text(String.format("%02d:%02d", min, sec), fontSize = 10.sp, color = Color.White, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // User Customization Settings Dialog
+        // --------------------------------------------------------------------
+        if (showSettingsDialog) {
+            AlertDialog(
+                onDismissRequest = { showSettingsDialog = false },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = Color(0xFF1D4ED8)
+                        )
+                        Text(
+                            text = "HUD表示とルート記録設定",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 16.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // SECTION 1: Route traced colors
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = "🎨 軌跡の記録コードカラー",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF475569)
+                            )
+                            Text(
+                                text = "地図上に青色などで記録される軌跡ルート線の表示色を変更できます。",
+                                fontSize = 10.sp,
+                                color = Color(0xFF64748B)
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val colorOptions = listOf(
+                                    Triple("blue", "ロイヤル青", Color(0xFF1D4ED8)),
+                                    Triple("green", "ECO緑", Color(0xFF10B981)),
+                                    Triple("red", "スポーツ赤", Color(0xFFEF4444)),
+                                    Triple("purple", "高精細紫", Color(0xFF8B5CF6)),
+                                    Triple("orange", "補正オレンジ", Color(0xFFF97316))
+                                )
+                                colorOptions.forEach { (choiceKey, label, colVal) ->
+                                    val isSelected = routeColorChoice == choiceKey
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier
+                                            .clickable { updateRouteColorChoice(choiceKey) }
+                                            .padding(4.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(colVal)
+                                                .border(
+                                                    width = if (isSelected) 3.dp else 0.dp,
+                                                    color = Color(0xFF0F172A),
+                                                    shape = CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Current",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.size(2.dp))
+                                        Text(label, fontSize = 8.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                        // SECTION 2: HUD item ON/OFF Toggles
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "🔘 HUD表示項目のオン/オフ",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF475569)
+                            )
+
+                            // 1. Show speedometer toggle
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { updateShowSpeedometer(!showSpeedometer) },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.Speed, contentDescription = "Speed", tint = Color(0xFF475569), modifier = Modifier.size(16.dp))
+                                    Column {
+                                        Text("スピードメーター表示", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                        Text("現在の時速メーターを画面上に表示します", fontSize = 8.1.sp, color = Color(0xFF64748B))
+                                    }
+                                }
+                                Switch(
+                                    checked = showSpeedometer,
+                                    onCheckedChange = { updateShowSpeedometer(it) },
+                                    modifier = Modifier.scale(0.85f)
+                                )
+                            }
+
+                            // 2. Show distance dashboard toggle
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { updateShowDistanceDashboard(!showDistanceDashboard) },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(Icons.Default.TrendingUp, contentDescription = "Trip", tint = Color(0xFF475569), modifier = Modifier.size(16.dp))
+                                    Column {
+                                        Text("ダッシュボード表示", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                        Text("走行距離(TRIP)・経過時間・平均速度を表示します", fontSize = 8.1.sp, color = Color(0xFF64748B))
+                                    }
+                                }
+                                Switch(
+                                    checked = showDistanceDashboard,
+                                    onCheckedChange = { updateShowDistanceDashboard(it) },
+                                    modifier = Modifier.scale(0.85f)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                        // SECTION 3: Layout presets position setting
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "📏 画面表示位置のカスタマイズ",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF475569)
+                            )
+                            Text(
+                                text = "表示位置のプリセットを選択して、画面の配置をカスタマイズします。",
+                                fontSize = 9.sp,
+                                color = Color(0xFF64748B)
+                            )
+
+                            val placementOptions = listOf(
+                                "unified_top" to "統合ヘッダー (上部)",
+                                "split_bottom" to "左右に分割 (下部)",
+                                "compact_left" to "左下コンパクト",
+                                "compact_right" to "右下コンパクト"
+                            )
+
+                            placementOptions.forEach { (presetKey, label) ->
+                                val isPresetSelected = layoutPresetChoices == presetKey
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isPresetSelected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { updateLayoutPreset(presetKey) }
+                                        .border(
+                                            width = if (isPresetSelected) 1.5.dp else 1.dp,
+                                            color = if (isPresetSelected) Color(0xFF1D4ED8) else Color(0xFFE2E8F0),
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = label,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                color = if (isPresetSelected) Color(0xFF1D4ED8) else Color(0xFF0F172A)
+                                            )
+                                            val descStr = when (presetKey) {
+                                                "unified_top" -> "視野が広がる上部の一体型プレミアムHUD"
+                                                "split_bottom" -> "左下に速度計、右下にTRIP計を分けて配置"
+                                                "compact_left" -> "左下のミニカードにコンパクトに全集約"
+                                                else -> "右下のミニカードにコンパクトに全集約"
+                                            }
+                                            Text(descStr, fontSize = 8.sp, color = Color(0xFF64748B))
+                                        }
+                                        RadioButton(
+                                            selected = isPresetSelected,
+                                            onClick = { updateLayoutPreset(presetKey) },
+                                            colors = RadioButtonDefaults.colors(selectedColor = Color(0xFF1D4ED8))
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { showSettingsDialog = false },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1D4ED8)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("保存して閉じる", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(20.dp))
+            )
         }
 
         // --------------------------------------------------------------------

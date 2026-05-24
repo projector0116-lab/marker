@@ -237,6 +237,7 @@ fun ScenicMapView(
     modifier: Modifier = Modifier,
     zoomScale: Float = 240000f,
     autoCenter: Boolean = true,
+    routeColor: Color = Color(0xFF1D4ED8),
     onMapDragged: (() -> Unit)? = null,
     onReCenter: (() -> Unit)? = null
 ) {
@@ -246,7 +247,7 @@ fun ScenicMapView(
     val animDragOffset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
 
     // Smoothly transition and snap drag offsets back to zero when centering is requested
-    LaunchedEffect(autoCenter, currentLocation) {
+    LaunchedEffect(autoCenter) {
         if (autoCenter) {
             animDragOffset.animateTo(Offset.Zero, animationSpec = tween(400))
         }
@@ -281,9 +282,10 @@ fun ScenicMapView(
     }
 
     // Load available landmarks dynamically depending on road context
-    val landmarks = remember(selectedRoad, currentLocation) {
-        val centerLat = currentLocation.latitude
-        val centerLng = currentLocation.longitude
+    val landmarks = remember(selectedRoad) {
+        val pivot = selectedRoad.nodes.firstOrNull() ?: currentLocation
+        val centerLat = pivot.latitude
+        val centerLng = pivot.longitude
         val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
         val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
 
@@ -312,7 +314,7 @@ fun ScenicMapView(
                 MapLandmark("📍 現在地ロック (Local GPS Lock)", centerLat, centerLng, "測位衛星信号捕捉アンカー", Color(0xFF1D4ED8)),
                 MapLandmark("🌳 まちのセントラルパーク", centerLat + 0.0045, centerLng - 0.0040, "市民憩いの緑地・地域避難場所", Color(0xFF16A34A), isMountain = false),
                 MapLandmark("⛩️ 平和記念神社", centerLat - 0.0035, centerLng + 0.0050, "地域守護・歴史文化スポット", Color(0xFFDC2626), isShrine = true),
-                MapLandmark("🏔️ みはらしの丘 (Scenic Hill)", centerLat + 0.0020, centerLng + 0.0035, "美しい景色が広がる見晴らし台", Color(0xFF15803D), isMountain = true)
+                MapLandmark("🏔️ みはらしの丘 (Scenic Hill)", centerLat + 0.0020, centerLng + 0.0035, "美しい景色が広がる見事な丘", Color(0xFF15803D), isMountain = true)
             )
         }
     }
@@ -323,7 +325,7 @@ fun ScenicMapView(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFFEDE9E2)) // Light background
-            .pointerInput(autoCenter, currentLocation) {
+            .pointerInput(Unit) {
                 // Handle smooth manual dragging displacement panning
                 detectDragGestures { change, dragAmount ->
                     change.consume()
@@ -735,7 +737,7 @@ fun ScenicMapView(
                 // Wide soft tracking glow
                 drawPath(
                     path = trailPath,
-                    color = Color(0x3F2563EB),
+                    color = routeColor.copy(alpha = 0.25f),
                     style = Stroke(
                         width = 12.dp.toPx(),
                         cap = StrokeCap.Round,
@@ -746,7 +748,7 @@ fun ScenicMapView(
                 // Strong visible royal blue alignment core ribbon
                 drawPath(
                     path = trailPath,
-                    color = Color(0xFF1D4ED8),
+                    color = routeColor,
                     style = Stroke(
                         width = 5.5.dp.toPx(),
                         cap = StrokeCap.Round,
