@@ -1,0 +1,6 @@
+{
+  "name": "軌跡マップ",
+  "description": "移動したルートを青色の線で道路にスナップして記録し、速度メーター、走行距離ダッシュボード、GPSトンネル補完機能を備えた地図アプリです。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
