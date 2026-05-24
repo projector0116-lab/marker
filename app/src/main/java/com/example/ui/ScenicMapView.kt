@@ -580,7 +580,7 @@ fun ScenicMapView(
                             val prev = project(road.nodes[idx - 1].latitude, road.nodes[idx - 1].longitude)
                             val next = project(road.nodes[idx].latitude, road.nodes[idx].longitude)
                             // Smoothly interpolate points based on zoom
-                            val kSteps = (zoom / 15000f).toInt().coerceIn(1, 20)
+                            val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
                             for (k in 1..kSteps) {
                                 val fraction = k.toFloat() / (kSteps + 1).toFloat()
                                 val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
@@ -651,7 +651,7 @@ fun ScenicMapView(
                                         val prev = project(road.nodes[i - 1].latitude, road.nodes[i - 1].longitude)
                                         val next = project(road.nodes[i].latitude, road.nodes[i].longitude)
                                         // Add intermediate points
-                                        val kSteps = (zoom / 15000f).toInt().coerceIn(1, 20)
+                                        val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
                                         for (k in 1..kSteps) {
                                             val fraction = k.toFloat() / (kSteps + 1).toFloat()
                                             val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
@@ -729,7 +729,7 @@ fun ScenicMapView(
                         val prev = project(recordedPath[i - 1].latitude, recordedPath[i - 1].longitude)
                         val next = project(recordedPath[i].latitude, recordedPath[i].longitude)
                         // Add intermediate points to smoothen angles
-                        val kSteps = (zoom / 15000f).toInt().coerceIn(1, 20)
+                        val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
                         for (k in 1..kSteps) {
                             val fraction = k.toFloat() / (kSteps + 1).toFloat()
                             val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
