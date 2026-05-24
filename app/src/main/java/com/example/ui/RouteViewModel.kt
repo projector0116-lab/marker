@@ -620,8 +620,8 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         simulationJob = viewModelScope.launch {
             val road = selectedRoad.value
             val roadLength = getRoadTotalLengthMeters(road)
-            val stepMs = 100L // 100ms step for buttery-smooth visual updates
-            val stepSec = stepMs / 1000.0 // 0.1s step size
+            val stepMs = 8L // 8ms step for buttery-smooth 120fps visual updates
+            val stepSec = stepMs / 1000.0 // 0.008s step size
             var lastRecordTime = 0L
 
             // Simulate point iterations
