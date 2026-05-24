@@ -45,9 +45,176 @@ import com.example.util.GeoPoint
 import com.example.util.MockRoad
 import com.example.util.NavigationEngine
 import kotlinx.coroutines.launch
+import coil.compose.AsyncImage
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.ContentScale
+import kotlin.math.ln
+import kotlin.math.roundToInt
+import kotlin.math.floor
+import kotlin.math.ceil
+import kotlin.math.sinh
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+
+data class MajorCity(
+    val name: String,
+    val lat: Double,
+    val lng: Double,
+    val description: String,
+    val isCapital: Boolean = false
+)
+
+private val HONSHU_POLY = listOf(
+    GeoPoint(41.54, 140.91), GeoPoint(40.52, 141.52), GeoPoint(39.64, 141.98), GeoPoint(38.26, 141.00),
+    GeoPoint(36.94, 140.79), GeoPoint(35.73, 140.85), GeoPoint(35.15, 140.32), GeoPoint(34.90, 139.88),
+    GeoPoint(35.31, 139.82), GeoPoint(35.65, 139.75), GeoPoint(35.45, 139.65), GeoPoint(35.13, 139.62),
+    GeoPoint(35.305, 139.51), GeoPoint(35.25, 139.15), GeoPoint(35.00, 139.08), GeoPoint(34.60, 138.85),
+    GeoPoint(34.80, 138.75), GeoPoint(35.10, 138.86), GeoPoint(35.01, 138.52), GeoPoint(34.60, 138.22),
+    GeoPoint(34.70, 137.60), GeoPoint(34.58, 137.02), GeoPoint(35.05, 136.85), GeoPoint(34.27, 136.87),
+    GeoPoint(33.43, 135.75), GeoPoint(34.23, 135.15), GeoPoint(34.69, 135.45), GeoPoint(34.69, 135.20),
+    GeoPoint(34.80, 134.45), GeoPoint(34.60, 133.95), GeoPoint(34.35, 132.45), GeoPoint(33.95, 130.93),
+    GeoPoint(34.67, 131.85), GeoPoint(35.45, 133.05), GeoPoint(35.53, 134.22), GeoPoint(35.48, 135.35),
+    GeoPoint(35.75, 136.10), GeoPoint(36.60, 136.63), GeoPoint(37.52, 137.35), GeoPoint(36.80, 137.20),
+    GeoPoint(37.18, 138.25), GeoPoint(37.95, 139.05), GeoPoint(38.92, 139.85), GeoPoint(39.72, 140.10),
+    GeoPoint(40.82, 140.75)
+)
+
+private val HOKKAIDO_POLY = listOf(
+    GeoPoint(45.52, 141.93), GeoPoint(44.35, 143.35), GeoPoint(44.02, 144.30), GeoPoint(44.36, 145.31),
+    GeoPoint(43.38, 145.81), GeoPoint(42.95, 144.38), GeoPoint(41.93, 143.25), GeoPoint(42.35, 140.97),
+    GeoPoint(41.77, 140.73), GeoPoint(41.35, 140.20), GeoPoint(42.06, 140.05), GeoPoint(42.79, 140.23),
+    GeoPoint(43.20, 141.01), GeoPoint(43.93, 141.63), GeoPoint(45.42, 141.67)
+)
+
+private val SHIKOKU_POLY = listOf(
+    GeoPoint(34.34, 134.05), GeoPoint(34.07, 134.57), GeoPoint(33.25, 134.18), GeoPoint(32.72, 133.02),
+    GeoPoint(33.22, 132.55), GeoPoint(33.84, 132.76), GeoPoint(34.07, 133.00)
+)
+
+private val KYUSHU_POLY = listOf(
+    GeoPoint(33.95, 130.95), GeoPoint(33.23, 131.60), GeoPoint(32.58, 131.67), GeoPoint(31.90, 131.43),
+    GeoPoint(31.00, 130.66), GeoPoint(31.58, 130.55), GeoPoint(32.80, 130.70), GeoPoint(32.75, 129.87),
+    GeoPoint(33.45, 129.97), GeoPoint(33.60, 130.40)
+)
+
+private val JAPAN_MAJOR_CITIES = listOf(
+    MajorCity("札幌 (Sapporo)", 43.06, 141.35, "北海道"),
+    MajorCity("青森 (Aomori)", 40.82, 140.75, "東北部"),
+    MajorCity("仙台 (Sendai)", 38.26, 140.88, "東北 / 杜の都"),
+    MajorCity("新潟 (Niigata)", 37.91, 139.04, "日本海側"),
+    MajorCity("東京 (Tokyo)", 35.68, 139.76, "日本首都", isCapital = true),
+    MajorCity("横浜 (Yokohama)", 35.44, 139.64, "神奈川県"),
+    MajorCity("静岡 (Shizuoka)", 34.97, 138.38, "東海地方"),
+    MajorCity("名古屋 (Nagoya)", 35.18, 136.90, "中京圏"),
+    MajorCity("京都 (Kyoto)", 35.01, 135.76, "古都"),
+    MajorCity("大阪 (Osaka)", 34.69, 135.50, "関西中心"),
+    MajorCity("広島 (Hiroshima)", 34.38, 132.45, "平和都市"),
+    MajorCity("高松 (Takamatsu)", 34.34, 134.04, "四国地方"),
+    MajorCity("福岡 (Fukuoka)", 33.59, 130.40, "九州最大市"),
+    MajorCity("鹿児島 (Kagoshima)", 31.59, 130.55, "薩摩"),
+    MajorCity("那覇 (Naha)", 26.21, 127.68, "沖縄県")
+)
+
+data class NationalHighway(
+    val name: String,
+    val enName: String,
+    val points: List<GeoPoint>,
+    val color: Color
+)
+
+private val JAPAN_EXPRESSWAYS = listOf(
+    NationalHighway(
+        "東北道 (Tohoku Expwy)", "Tohoku Expwy",
+        listOf(
+            GeoPoint(35.68, 139.76),
+            GeoPoint(36.36, 139.80),
+            GeoPoint(37.50, 140.10),
+            GeoPoint(38.26, 140.88),
+            GeoPoint(39.70, 141.15),
+            GeoPoint(40.82, 140.75)
+        ),
+        Color(0xFF15803D) // Standard green sign color for Japanese Expressways
+    ),
+    NationalHighway(
+        "東名高速 (Tomei Expwy)", "Tomei Expwy",
+        listOf(
+            GeoPoint(35.68, 139.76),
+            GeoPoint(35.40, 139.40),
+            GeoPoint(34.97, 138.38),
+            GeoPoint(34.75, 137.75),
+            GeoPoint(35.18, 136.90)
+        ),
+        Color(0xFF15803D)
+    ),
+    NationalHighway(
+        "名神高速 (Meishin Expwy)", "Meishin Expwy",
+        listOf(
+            GeoPoint(35.18, 136.90),
+            GeoPoint(35.25, 136.25),
+            GeoPoint(35.01, 135.76),
+            GeoPoint(34.69, 135.50)
+        ),
+        Color(0xFF15803D)
+    ),
+    NationalHighway(
+        "中央道 (Chuo Expwy)", "Chuo Expwy",
+        listOf(
+            GeoPoint(35.68, 139.76),
+            GeoPoint(35.65, 138.55),
+            GeoPoint(36.00, 138.10),
+            GeoPoint(35.35, 137.30),
+            GeoPoint(35.18, 136.90)
+        ),
+        Color(0xFF16A34A)
+    ),
+    NationalHighway(
+        "北陸道 (Hokuriku Expwy)", "Hokuriku Expwy",
+        listOf(
+            GeoPoint(35.25, 136.25),
+            GeoPoint(36.06, 136.20),
+            GeoPoint(36.60, 136.63),
+            GeoPoint(36.80, 137.20),
+            GeoPoint(37.18, 138.25),
+            GeoPoint(37.91, 139.04)
+        ),
+        Color(0xFF15803D)
+    ),
+    NationalHighway(
+        "山陽道 (Sanyo Expwy)", "Sanyo Expwy",
+        listOf(
+            GeoPoint(34.69, 135.50),
+            GeoPoint(34.70, 135.20),
+            GeoPoint(34.66, 133.92),
+            GeoPoint(34.38, 132.45),
+            GeoPoint(34.15, 131.47),
+            GeoPoint(33.95, 130.95),
+            GeoPoint(33.59, 130.40)
+        ),
+        Color(0xFF15803D)
+    ),
+    NationalHighway(
+        "九州道 (Kyushu Expwy)", "Kyushu Expwy",
+        listOf(
+            GeoPoint(33.59, 130.40),
+            GeoPoint(32.78, 130.73),
+            GeoPoint(31.59, 130.55)
+        ),
+        Color(0xFF15803D)
+    ),
+    NationalHighway(
+        "道央道 (Hokkaido Expwy)", "Hokkaido Expwy",
+        listOf(
+            GeoPoint(41.77, 140.73),
+            GeoPoint(42.32, 140.97),
+            GeoPoint(43.06, 141.35),
+            GeoPoint(43.77, 142.36)
+        ),
+        Color(0xFF15803D)
+    )
+)
 
 data class MapLandmark(
     val name: String,
@@ -145,15 +312,17 @@ fun ScenicMapView(
                 MapLandmark("📍 現在地ロック (Local GPS Lock)", centerLat, centerLng, "測位衛星信号捕捉アンカー", Color(0xFF1D4ED8)),
                 MapLandmark("🌳 まちのセントラルパーク", centerLat + 0.0045, centerLng - 0.0040, "市民憩いの緑地・地域避難場所", Color(0xFF16A34A), isMountain = false),
                 MapLandmark("⛩️ 平和記念神社", centerLat - 0.0035, centerLng + 0.0050, "地域守護・歴史文化スポット", Color(0xFFDC2626), isShrine = true),
-                MapLandmark("☕ リバーサイドテラスモール", centerLat, centerLng + 0.0030, "お買い物とグルメの複合スポット", Color(0xFFEA580C))
+                MapLandmark("🏔️ みはらしの丘 (Scenic Hill)", centerLat + 0.0020, centerLng + 0.0035, "美しい景色が広がる見晴らし台", Color(0xFF15803D), isMountain = true)
             )
         }
     }
 
-    Box(
+    val density = LocalDensity.current
+
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFEDE9E2)) // Warm Sand / Canvas Map Ground Background
+            .background(Color(0xFFEDE9E2)) // Light background
             .pointerInput(autoCenter, currentLocation) {
                 // Handle smooth manual dragging displacement panning
                 detectDragGestures { change, dragAmount ->
@@ -173,40 +342,114 @@ fun ScenicMapView(
                 )
             }
     ) {
+        val width = with(density) { maxWidth.toPx() }
+        val height = with(density) { maxHeight.toPx() }
+        val centerLat = currentLocation.latitude
+        val centerLng = currentLocation.longitude
+        val zoom = zoomScale
+
+        // Longitudinal correction angle calculation
+        val cosLat = cos(Math.toRadians(centerLat))
+
+        // Mathematical projection converter (WGS84 GPS coordinate -> 2D screen coordinate pixels)
+        val project: (Double, Double) -> Offset = { lat, lng ->
+            val dx = (lng - centerLng) * cosLat * zoom
+            val dy = -(lat - centerLat) * zoom
+            Offset(
+                x = (width / 2f) + dx.toFloat() + animDragOffset.value.x,
+                y = (height / 2f) + dy.toFloat() + animDragOffset.value.y
+            )
+        }
+
+        // Estimate current visible coordinate ranges
+        val latHalfSpan = (height / 2f) / zoom
+        val lngHalfSpan = (width / 2f) / (zoom * cosLat)
+        
+        val minLat = centerLat - latHalfSpan - animDragOffset.value.y / zoom
+        val maxLat = centerLat + latHalfSpan - animDragOffset.value.y / zoom
+        val minLng = centerLng - lngHalfSpan - animDragOffset.value.x / (zoom * cosLat)
+        val maxLng = centerLng + lngHalfSpan - animDragOffset.value.x / (zoom * cosLat)
+
+        // Dynamic Web Mercator Tile calculation (No API Key real map, no shop names)
+        val osmZoom = (java.lang.Math.log(1.40877 * cosLat * zoom) / java.lang.Math.log(2.0)).roundToInt().coerceIn(2, 18)
+        val n = 1 shl osmZoom
+
+        val ftileXMin = n * (minLng + 180.0) / 360.0
+        val ftileXMax = n * (maxLng + 180.0) / 360.0
+        val ftileYMin = n * (1.0 - java.lang.Math.log(java.lang.Math.tan(java.lang.Math.toRadians(maxLat)) + 1.0 / java.lang.Math.cos(java.lang.Math.toRadians(maxLat))) / java.lang.Math.PI) / 2.0
+        val ftileYMax = n * (1.0 - java.lang.Math.log(java.lang.Math.tan(java.lang.Math.toRadians(minLat)) + 1.0 / java.lang.Math.cos(java.lang.Math.toRadians(minLat))) / java.lang.Math.PI) / 2.0
+
+        val minTileX = floor(ftileXMin).toInt().coerceIn(0, n - 1)
+        val maxTileX = ceil(ftileXMax).toInt().coerceIn(0, n - 1)
+        val minTileY = floor(ftileYMin).toInt().coerceIn(0, n - 1)
+        val maxTileY = ceil(ftileYMax).toInt().coerceIn(0, n - 1)
+
+        val tileXRange = minTileX..maxTileX.coerceAtMost(minTileX + 8)
+        val tileYRange = minTileY..maxTileY.coerceAtMost(minTileY + 8)
+
+        // Render dynamic web map tiles underneath the Canvas overlays
+        Box(modifier = Modifier.fillMaxSize()) {
+            for (tileY in tileYRange) {
+                for (tileX in tileXRange) {
+                    val tileLngStart = tileX.toDouble() * 360.0 / n - 180.0
+                    val tileLngEnd = (tileX + 1).toDouble() * 360.0 / n - 180.0
+                    val tileLatStart = java.lang.Math.toDegrees(java.lang.Math.atan(java.lang.Math.sinh(java.lang.Math.PI * (1.0 - 2.0 * tileY.toDouble() / n))))
+                    val tileLatEnd = java.lang.Math.toDegrees(java.lang.Math.atan(java.lang.Math.sinh(java.lang.Math.PI * (1.0 - 2.0 * (tileY + 1).toDouble() / n))))
+
+                    val pTopLeft = project(tileLatStart, tileLngStart)
+                    val pBottomRight = project(tileLatEnd, tileLngEnd)
+
+                    val tileW = pBottomRight.x - pTopLeft.x
+                    val tileH = pBottomRight.y - pTopLeft.y
+
+                    val tileWDp = with(density) { tileW.coerceAtLeast(0f).toDp() }
+                    val tileHDp = with(density) { tileH.coerceAtLeast(0f).toDp() }
+                    val tileOffsetX = with(density) { pTopLeft.x.toDp() }
+                    val tileOffsetY = with(density) { pTopLeft.y.toDp() }
+
+                    AsyncImage(
+                        model = "https://cyberjapandata.gsi.go.jp/xyz/std/$osmZoom/$tileX/$tileY.png", // Geospatial Information Authority of Japan (GSI): Clean, precise official maps of Japan, no shop names!
+                        contentDescription = null,
+                        modifier = Modifier
+                            .absoluteOffset(x = tileOffsetX, y = tileOffsetY)
+                            .requiredSize(width = tileWDp, height = tileHDp),
+                        contentScale = ContentScale.FillBounds
+                    )
+                }
+            }
+        }
+
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-            val centerLat = currentLocation.latitude
-            val centerLng = currentLocation.longitude
-            val zoom = zoomScale
+            val drawWidth = size.width
+            val drawHeight = size.height
 
             // Longitudinal correction angle calculation
-            val cosLat = cos(Math.toRadians(centerLat))
+            val cosLatVal = cos(Math.toRadians(centerLat))
 
-            // Mathematical projection converter (WGS84 GPS coordinate -> 2D screen coordinate pixels)
+            // Mathematical projection converter for Canvas coordinate scope
             fun project(lat: Double, lng: Double): Offset {
-                val dx = (lng - centerLng) * cosLat * zoom
+                val dx = (lng - centerLng) * cosLatVal * zoom
                 val dy = -(lat - centerLat) * zoom
                 return Offset(
-                    x = (width / 2f) + dx.toFloat() + animDragOffset.value.x,
-                    y = (height / 2f) + dy.toFloat() + animDragOffset.value.y
+                    x = (drawWidth / 2f) + dx.toFloat() + animDragOffset.value.x,
+                    y = (drawHeight / 2f) + dy.toFloat() + animDragOffset.value.y
                 )
             }
 
             // Estimate current visible coordinate ranges
-            val latHalfSpan = (height / 2f) / zoom
-            val lngHalfSpan = (width / 2f) / (zoom * cosLat)
+            val latHalfSpanVal = (drawHeight / 2f) / zoom
+            val lngHalfSpanVal = (drawWidth / 2f) / (zoom * cosLatVal)
             
-            val minLat = centerLat - latHalfSpan - animDragOffset.value.y / zoom
-            val maxLat = centerLat + latHalfSpan - animDragOffset.value.y / zoom
-            val minLng = centerLng - lngHalfSpan - animDragOffset.value.x / (zoom * cosLat)
-            val maxLng = centerLng + lngHalfSpan - animDragOffset.value.x / (zoom * cosLat)
+            val minLatVal = centerLat - latHalfSpanVal - animDragOffset.value.y / zoom
+            val maxLatVal = centerLat + latHalfSpanVal - animDragOffset.value.y / zoom
+            val minLngVal = centerLng - lngHalfSpanVal - animDragOffset.value.x / (zoom * cosLatVal)
+            val maxLngVal = centerLng + lngHalfSpanVal - animDragOffset.value.x / (zoom * cosLatVal)
 
             // Dynamic view center
             val viewCenterLat = centerLat - animDragOffset.value.y / zoom
-            val viewCenterLng = centerLng + animDragOffset.value.x / (zoom * cosLat)
+            val viewCenterLng = centerLng + animDragOffset.value.x / (zoom * cosLatVal)
 
-            // Check if coordinates lie near Shonan or Hakone regions so we draw local offline geometry gracefully
+            // Check if coordinates lie near Shonan or Hakone regions
             val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
             val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
 
@@ -218,189 +461,43 @@ fun ScenicMapView(
                     (selectedRoad.id == "real_gps_free" && isNearHakone)
 
             // ==========================================
-            // LAYER 1: WATER BODIES & LAND BACKGROUNDS
-            // ==========================================
-            if (drawShonanFeatures) {
-                // Pacific Ocean (Sagami Bay - 相模湾) fills everything south of latitude 35.305
-                val pCoastL = project(35.305, minLng)
-                val pCoastR = project(35.305, maxLng)
-                val oceanPath = Path().apply {
-                    moveTo(pCoastL.x, pCoastL.y)
-                    lineTo(pCoastR.x, pCoastR.y)
-                    lineTo(pCoastR.x, height + 100f)
-                    lineTo(pCoastL.x, height + 100f)
-                    close()
-                }
-                drawPath(oceanPath, Color(0xFFA5DCF8)) // Beautiful ocean blue
-
-                // Coastal Sand Beach line along the Pacific Shore
-                val beachLinePath = Path().apply {
-                    moveTo(pCoastL.x, pCoastL.y)
-                    lineTo(pCoastR.x, pCoastR.y)
-                }
-                drawPath(
-                    path = beachLinePath,
-                    color = Color(0xFFE5D4BA), // Warm golden sand
-                    style = Stroke(
-                        width = 12.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                )
-
-                // Draw Tsujido Seaside Park (辻堂海浜公園) green meadow zone
-                val parkCenter = project(35.3210, 139.4510)
-                drawCircle(
-                    color = Color(0xFFA3D9A5).copy(alpha = 0.8f),
-                    radius = 50.dp.toPx(),
-                    center = parkCenter
-                )
-            } else if (drawHakoneFeatures) {
-                // Hakone Mountain forested green surroundings (Ashigarashimo District)
-                drawRect(
-                    color = Color(0xFFE2EAD8), // Forest/mountain green land base
-                    topLeft = Offset.Zero,
-                    size = size
-                )
-
-                // Serene Lake Ashi (芦ノ湖) large water body
-                val lakeCenter = project(35.2010, 139.0150)
-                val lakeW = 60.dp.toPx()
-                val lakeH = 125.dp.toPx()
-                drawOval(
-                    color = Color(0xFF0284C7).copy(alpha = 0.65f), // Rich blue water
-                    topLeft = Offset(lakeCenter.x - lakeW, lakeCenter.y - lakeH),
-                    size = Size(lakeW * 2f, lakeH * 2f)
-                )
-
-                // Lake shoreline outline
-                drawOval(
-                    color = Color(0xFFE5D4BA),
-                    topLeft = Offset(lakeCenter.x - lakeW, lakeCenter.y - lakeH),
-                    size = Size(lakeW * 2f, lakeH * 2f),
-                    style = Stroke(width = 3.dp.toPx())
-                )
-            } else {
-                // Procedural beautiful River passing near current coordinate center (e.g. Kyoto Kamogawa or local river) to make map rich!
-                val proceduralRiverPath = Path().apply {
-                    val pStart = project(centerLat + 0.012, centerLng - 0.008)
-                    val pMid = project(centerLat, centerLng + 0.002)
-                    val pEnd = project(centerLat - 0.012, centerLng + 0.010)
-                    moveTo(pStart.x, pStart.y)
-                    quadraticTo(pMid.x, pMid.y, pEnd.x, pEnd.y)
-                }
-                drawPath(
-                    path = proceduralRiverPath,
-                    color = Color(0xFFA5DCF8).copy(alpha = 0.80f),
-                    style = Stroke(
-                        width = 16.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-            }
-
-            // Draw winding Sagami River (相模川)
-            if (selectedRoad.id == "expressway_tunnels" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
-                val riverPath = Path().apply {
-                    val pStart = project(35.3900, 139.3900)
-                    val pMid = project(35.3550, 139.3930)
-                    val pEnd = project(35.3050, 139.3870)
-                    moveTo(pStart.x, pStart.y)
-                    quadraticTo(pMid.x, pMid.y, pEnd.x, pEnd.y)
-                }
-                drawPath(
-                    path = riverPath,
-                    color = Color(0xFFA5DCF8),
-                    style = Stroke(
-                        width = 36.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-            }
-
-            // ==========================================
-            // LAYER 2: PROCEDURAL URBAN GRID STREETS
-            // ==========================================
-            // Renders a realistic background city street mesh over land parts
-            val streetStepLat = 0.003
-            val streetStepLng = 0.0036
-            
-            val startStLat = Math.floor(minLat / streetStepLat) * streetStepLat
-            val endStLat = Math.ceil(maxLat / streetStepLat) * streetStepLat
-            val startStLng = Math.floor(minLng / streetStepLng) * streetStepLng
-            val endStLng = Math.ceil(maxLng / streetStepLng) * streetStepLng
-
-            // 2.1 Horizontal Local Streets
-            var curStLat = startStLat
-            while (curStLat <= endStLat) {
-                val pL = project(curStLat, minLng)
-                val pR = project(curStLat, maxLng)
-                // Filter: skip drawing horizontal streets deep inside the Pacific Ocean (below coast)
-                if (!drawShonanFeatures || curStLat > 35.3060) {
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.65f),
-                        start = pL,
-                        end = pR,
-                        strokeWidth = 2.dp.toPx()
-                    )
-                }
-                curStLat += streetStepLat
-            }
-
-            // 2.2 Vertical Local Streets
-            var curStLng = startStLng
-            while (curStLng <= endStLng) {
-                val pT = project(maxLat, curStLng)
-                val pB = project(minLat, curStLng)
-                // Skip if entirely in Southern Ocean
-                if (!drawShonanFeatures || minLat > 35.3060 || maxLat > 35.3060) {
-                    drawLine(
-                        color = Color.White.copy(alpha = 0.65f),
-                        start = pT,
-                        end = pB,
-                        strokeWidth = 2.dp.toPx()
-                    )
-                }
-                curStLng += streetStepLng
-            }
-
-            // ==========================================
             // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
             // ==========================================
-            // Beautiful classic railroad markings for Shonan/Kamakura areas
-            if (selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
-                val railPath = Path().apply {
-                    val pEno = project(35.3090, 139.4880) // Enoshima Station
-                    val pGok = project(35.3070, 139.5280) // Gokurakuji curve
-                    val pHase = project(35.3115, 139.5350) // Hase Station
-                    val pKam = project(35.3190, 139.5504) // Kamakura terminus
-                    moveTo(pEno.x, pEno.y)
-                    lineTo(pGok.x, pGok.y)
-                    lineTo(pHase.x, pHase.y)
-                    lineTo(pKam.x, pKam.y)
+            if (zoom > 25000f) {
+                // Beautiful classic railroad markings for Shonan/Kamakura areas
+                if (selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
+                    val railPath = Path().apply {
+                        val pEno = project(35.3090, 139.4880) // Enoshima Station
+                        val pGok = project(35.3070, 139.5280) // Gokurakuji curve
+                        val pHase = project(35.3115, 139.5350) // Hase Station
+                        val pKam = project(35.3190, 139.5504) // Kamakura terminus
+                        moveTo(pEno.x, pEno.y)
+                        lineTo(pGok.x, pGok.y)
+                        lineTo(pHase.x, pHase.y)
+                        lineTo(pKam.x, pKam.y)
+                    }
+                    // Solid dark base
+                    drawPath(
+                        path = railPath,
+                        color = Color(0xFF475569),
+                        style = Stroke(
+                            width = 3.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+                    // Dashed white ticks
+                    drawPath(
+                        path = railPath,
+                        color = Color.White,
+                        style = Stroke(
+                            width = 2.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
+                        )
+                    )
                 }
-                // Solid dark base
-                drawPath(
-                    path = railPath,
-                    color = Color(0xFF475569),
-                    style = Stroke(
-                        width = 3.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-                // Dashed white ticks
-                drawPath(
-                    path = railPath,
-                    color = Color.White,
-                    style = Stroke(
-                        width = 2.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
-                    )
-                )
             }
 
             // ==========================================
@@ -409,7 +506,12 @@ fun ScenicMapView(
             val gridStep = when {
                 zoom > 350000 -> 0.001
                 zoom > 150000 -> 0.002
-                else -> 0.005
+                zoom > 50000  -> 0.005
+                zoom > 15000  -> 0.02
+                zoom > 5000   -> 0.1
+                zoom > 1500   -> 0.5
+                zoom > 500    -> 2.0
+                else          -> 5.0
             }
 
             val startGridLat = Math.floor(minLat / gridStep) * gridStep
@@ -700,99 +802,156 @@ fun ScenicMapView(
             }
 
             // ==========================================
-            // LAYER 9: LANDMARKS AND POI FLAGMARK LABELS
+            // LAYER 9: LANDMARKS AND POI FLAGMARK LABELS / MAJOR CITIES
             // ==========================================
-            landmarks.forEach { lm ->
-                val lmPt = project(lm.lat, lm.lng)
-                
-                // Only draw if within bounds for optimized processing
-                if (lmPt.x in -100f..(width + 100f) && lmPt.y in -100f..(height + 100f)) {
-                    // Draw localized icons based on features
-                    when {
-                        lm.isShrine -> {
-                            // Top Red bar
-                            drawLine(
-                                color = Color(0xFFE11D48),
-                                start = Offset(lmPt.x - 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                end = Offset(lmPt.x + 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                strokeWidth = 3.dp.toPx(),
-                                cap = StrokeCap.Round
-                            )
-                            // Columns
-                            drawLine(
-                                color = Color(0xFFE11D48),
-                                start = Offset(lmPt.x - 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                end = Offset(lmPt.x - 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
-                                strokeWidth = 2.dp.toPx()
-                            )
-                            drawLine(
-                                color = Color(0xFFE11D48),
-                                start = Offset(lmPt.x + 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                end = Offset(lmPt.x + 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
-                                strokeWidth = 2.dp.toPx()
-                            )
-                        }
-                        lm.isMountain -> {
-                            // Peak triangle
-                            val triPath = Path().apply {
-                                moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
-                                lineTo(lmPt.x - 10.dp.toPx(), lmPt.y + 6.dp.toPx())
-                                lineTo(lmPt.x + 10.dp.toPx(), lmPt.y + 6.dp.toPx())
-                                close()
+            if (zoom > 30000f) {
+                landmarks.forEach { lm ->
+                    val lmPt = project(lm.lat, lm.lng)
+                    
+                    // Only draw if within bounds for optimized processing
+                    if (lmPt.x in -100f..(width + 100f) && lmPt.y in -100f..(height + 100f)) {
+                        // Draw localized icons based on features
+                        when {
+                            lm.isShrine -> {
+                                // Top Red bar
+                                drawLine(
+                                    color = Color(0xFFE11D48),
+                                    start = Offset(lmPt.x - 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                    end = Offset(lmPt.x + 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                    strokeWidth = 3.dp.toPx(),
+                                    cap = StrokeCap.Round
+                                )
+                                // Columns
+                                drawLine(
+                                    color = Color(0xFFE11D48),
+                                    start = Offset(lmPt.x - 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                    end = Offset(lmPt.x - 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
+                                    strokeWidth = 2.dp.toPx()
+                                )
+                                drawLine(
+                                    color = Color(0xFFE11D48),
+                                    start = Offset(lmPt.x + 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                    end = Offset(lmPt.x + 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
+                                    strokeWidth = 2.dp.toPx()
+                                )
                             }
-                            drawPath(triPath, Color(0xFF166534))
-                            // Snow cap
-                            val snowPath = Path().apply {
-                                moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
-                                lineTo(lmPt.x - 3.dp.toPx(), lmPt.y - 5.dp.toPx())
-                                lineTo(lmPt.x + 3.dp.toPx(), lmPt.y - 5.dp.toPx())
-                                close()
+                            lm.isMountain -> {
+                                // Peak triangle
+                                val triPath = Path().apply {
+                                    moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
+                                    lineTo(lmPt.x - 10.dp.toPx(), lmPt.y + 6.dp.toPx())
+                                    lineTo(lmPt.x + 10.dp.toPx(), lmPt.y + 6.dp.toPx())
+                                    close()
+                                }
+                                drawPath(triPath, Color(0xFF166534))
+                                // Snow cap
+                                val snowPath = Path().apply {
+                                    moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
+                                    lineTo(lmPt.x - 3.dp.toPx(), lmPt.y - 5.dp.toPx())
+                                    lineTo(lmPt.x + 3.dp.toPx(), lmPt.y - 5.dp.toPx())
+                                    close()
+                                }
+                                drawPath(snowPath, Color.White)
                             }
-                            drawPath(snowPath, Color.White)
-                        }
-                        lm.isOcean -> {
-                            // Concentric blue POI bubbles
-                            drawCircle(
-                                color = Color(0x3F0284C7),
-                                radius = 10.dp.toPx(),
-                                center = lmPt
-                            )
-                            drawCircle(
-                                color = Color(0xFF0284C7),
-                                radius = 4.dp.toPx(),
-                                center = lmPt
-                            )
-                        }
-                        else -> {
-                            // Generic map flag marker pin
-                            val pinPath = Path().apply {
-                                moveTo(lmPt.x, lmPt.y)
-                                cubicTo(lmPt.x - 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
-                                        lmPt.x - 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
-                                        lmPt.x, lmPt.y - 14.dp.toPx())
-                                cubicTo(lmPt.x + 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
-                                        lmPt.x + 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
-                                        lmPt.x, lmPt.y)
-                                close()
+                            lm.isOcean -> {
+                                // Concentric blue POI bubbles
+                                drawCircle(
+                                    color = Color(0x3F0284C7),
+                                    radius = 10.dp.toPx(),
+                                    center = lmPt
+                                )
+                                drawCircle(
+                                    color = Color(0xFF0284C7),
+                                    radius = 4.dp.toPx(),
+                                    center = lmPt
+                                )
                             }
-                            drawPath(pinPath, lm.color)
+                            else -> {
+                                // Generic map flag marker pin
+                                val pinPath = Path().apply {
+                                    moveTo(lmPt.x, lmPt.y)
+                                    cubicTo(lmPt.x - 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
+                                            lmPt.x - 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
+                                            lmPt.x, lmPt.y - 14.dp.toPx())
+                                    cubicTo(lmPt.x + 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
+                                            lmPt.x + 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
+                                            lmPt.x, lmPt.y)
+                                    close()
+                                }
+                                drawPath(pinPath, lm.color)
+                            }
+                        }
+
+                        // Render gorgeous high contrast vector map text labels
+                        drawIntoCanvas { canvas ->
+                            canvas.nativeCanvas.drawText(
+                                lm.name,
+                                lmPt.x,
+                                lmPt.y + 19.dp.toPx(),
+                                landmarkLabelPaint
+                            )
+                            canvas.nativeCanvas.drawText(
+                                lm.description,
+                                lmPt.x,
+                                lmPt.y + 29.dp.toPx(),
+                                landmarkSubPaint
+                            )
                         }
                     }
+                }
+            } else {
+                // Render major Japanese cities at national scale
+                JAPAN_MAJOR_CITIES.forEach { city ->
+                    val cityPt = project(city.lat, city.lng)
+                    if (cityPt.x in -100f..(width + 100f) && cityPt.y in -100f..(height + 100f)) {
+                        if (city.isCapital) {
+                            // Gold star outline with crimson core representing Tokyo Capital
+                            drawCircle(
+                                color = Color(0xFFF59E0B),
+                                radius = 7.dp.toPx(),
+                                center = cityPt
+                            )
+                            drawCircle(
+                                color = Color(0xFFEF4444),
+                                radius = 4.dp.toPx(),
+                                center = cityPt
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                radius = 1.5.dp.toPx(),
+                                center = cityPt
+                            )
+                        } else {
+                            // High-contrast clean city marker dot
+                            drawCircle(
+                                color = Color(0xFF1E293B),
+                                radius = 4.5.dp.toPx(),
+                                center = cityPt
+                            )
+                            drawCircle(
+                                color = Color.White,
+                                radius = 2.dp.toPx(),
+                                center = cityPt
+                            )
+                        }
 
-                    // Render gorgeous high contrast vector map text labels
-                    drawIntoCanvas { canvas ->
-                        canvas.nativeCanvas.drawText(
-                            lm.name,
-                            lmPt.x,
-                            lmPt.y + 19.dp.toPx(),
-                            landmarkLabelPaint
-                        )
-                        canvas.nativeCanvas.drawText(
-                            lm.description,
-                            lmPt.x,
-                            lmPt.y + 29.dp.toPx(),
-                            landmarkSubPaint
-                        )
+                        // Render city name and regional info underneath
+                        drawIntoCanvas { canvas ->
+                            val namePaint = Paint().apply {
+                                color = android.graphics.Color.parseColor("#1E293B")
+                                textSize = 11.dp.toPx()
+                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                                textAlign = Paint.Align.CENTER
+                            }
+                            val subPaint = Paint().apply {
+                                color = android.graphics.Color.parseColor("#64748B")
+                                textSize = 8.5.dp.toPx()
+                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                                textAlign = Paint.Align.CENTER
+                            }
+                            canvas.nativeCanvas.drawText(city.name, cityPt.x, cityPt.y - 8.dp.toPx(), namePaint)
+                            canvas.nativeCanvas.drawText(city.description, cityPt.x, cityPt.y + 11.dp.toPx(), subPaint)
+                        }
                     }
                 }
             }

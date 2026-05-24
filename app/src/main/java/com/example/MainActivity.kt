@@ -657,7 +657,7 @@ fun RouteTrackerApp(
 
             // Zoom Out
             FloatingActionButton(
-                onClick = { zoomScale = (zoomScale / 1.25f).coerceAtLeast(80000f) },
+                onClick = { zoomScale = (zoomScale / 1.25f).coerceAtLeast(40f) },
                 containerColor = Color.White,
                 contentColor = Color(0xFF0F172A),
                 shape = CircleShape,
