@@ -579,9 +579,10 @@ fun ScenicMapView(
                         for (idx in 1 until road.nodes.size) {
                             val prev = project(road.nodes[idx - 1].latitude, road.nodes[idx - 1].longitude)
                             val next = project(road.nodes[idx].latitude, road.nodes[idx].longitude)
-                            // Add intermediate points
-                            for (k in 1..10) {
-                                val fraction = k / 11f
+                            // Smoothly interpolate points based on zoom
+                            val kSteps = (zoom / 15000f).toInt().coerceIn(1, 20)
+                            for (k in 1..kSteps) {
+                                val fraction = k.toFloat() / (kSteps + 1).toFloat()
                                 val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
                                 lineTo(lerpPt.x, lerpPt.y)
                             }
@@ -650,8 +651,9 @@ fun ScenicMapView(
                                         val prev = project(road.nodes[i - 1].latitude, road.nodes[i - 1].longitude)
                                         val next = project(road.nodes[i].latitude, road.nodes[i].longitude)
                                         // Add intermediate points
-                                        for (k in 1..10) {
-                                            val fraction = k / 11f
+                                        val kSteps = (zoom / 15000f).toInt().coerceIn(1, 20)
+                                        for (k in 1..kSteps) {
+                                            val fraction = k.toFloat() / (kSteps + 1).toFloat()
                                             val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
                                             lineTo(lerpPt.x, lerpPt.y)
                                         }
@@ -727,8 +729,9 @@ fun ScenicMapView(
                         val prev = project(recordedPath[i - 1].latitude, recordedPath[i - 1].longitude)
                         val next = project(recordedPath[i].latitude, recordedPath[i].longitude)
                         // Add intermediate points to smoothen angles
-                        for (k in 1..10) {
-                            val fraction = k / 11f
+                        val kSteps = (zoom / 15000f).toInt().coerceIn(1, 20)
+                        for (k in 1..kSteps) {
+                            val fraction = k.toFloat() / (kSteps + 1).toFloat()
                             val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
                             lineTo(lerpPt.x, lerpPt.y)
                         }
@@ -758,15 +761,15 @@ fun ScenicMapView(
                     )
                 )
 
-                // Tiny coordinate markers
-                recordedPath.forEach { rPoint ->
-                    val dotPt = project(rPoint.latitude, rPoint.longitude)
-                    drawCircle(
-                        color = if (rPoint.isInterpolated) Color(0xFFF97316) else Color(0xFF38BDF8),
-                        radius = 2.5.dp.toPx(),
-                        center = dotPt
-                    )
-                }
+                // Tiny coordinate markers removal requested by user:
+                // recordedPath.forEach { rPoint ->
+                //     val dotPt = project(rPoint.latitude, rPoint.longitude)
+                //     drawCircle(
+                //         color = if (rPoint.isInterpolated) Color(0xFFF97316) else Color(0xFF38BDF8),
+                //         radius = 2.5.dp.toPx(),
+                //         center = dotPt
+                //     )
+                // }
             }
 
             // ==========================================
