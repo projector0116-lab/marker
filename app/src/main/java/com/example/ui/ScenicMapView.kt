@@ -454,132 +454,287 @@ fun ScenicMapView(
             val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
             val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
 
-            val drawShonanFeatures = selectedRoad.id == "coast_kamakura" ||
-                    selectedRoad.id == "expressway_tunnels" ||
-                    (selectedRoad.id == "real_gps_free" && isNearShonan)
+            // Determine Map Bearing for rotation
+            val currentBearingDegees = if (recordedPath.size >= 2) {
+                val pLast = recordedPath.last()
+                val pPrev = recordedPath[recordedPath.size - 2]
+                val dLat = pLast.latitude - pPrev.latitude
+                val dLng = (pLast.longitude - pPrev.longitude) * cosLatVal
+                val rad = Math.atan2(dLng, dLat)
+                Math.toDegrees(rad).toFloat()
+            } else {
+                0f
+            }
 
-            val drawHakoneFeatures = selectedRoad.id == "hakone_pass" ||
-                    (selectedRoad.id == "real_gps_free" && isNearHakone)
-
-            // ==========================================
-            // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
-            // ==========================================
-            if (zoom > 25000f) {
-                // Beautiful classic railroad markings for Shonan/Kamakura areas
-                if (selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
-                    val railPath = Path().apply {
-                        val pEno = project(35.3090, 139.4880) // Enoshima Station
-                        val pGok = project(35.3070, 139.5280) // Gokurakuji curve
-                        val pHase = project(35.3115, 139.5350) // Hase Station
-                        val pKam = project(35.3190, 139.5504) // Kamakura terminus
-                        moveTo(pEno.x, pEno.y)
-                        lineTo(pGok.x, pGok.y)
-                        lineTo(pHase.x, pHase.y)
-                        lineTo(pKam.x, pKam.y)
+            rotate(degrees = -currentBearingDegees, pivot = Offset(drawWidth / 2f, drawHeight / 2f)) {
+                // ==========================================
+                // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
+                // ==========================================
+                if (zoom > 25000f) {
+                    // Beautiful classic railroad markings for Shonan/Kamakura areas
+                    if (selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
+                        val railPath = Path().apply {
+                            val pEno = project(35.3090, 139.4880) // Enoshima Station
+                            val pGok = project(35.3070, 139.5280) // Gokurakuji curve
+                            val pHase = project(35.3115, 139.5350) // Hase Station
+                            val pKam = project(35.3190, 139.5504) // Kamakura terminus
+                            moveTo(pEno.x, pEno.y)
+                            lineTo(pGok.x, pGok.y)
+                            lineTo(pHase.x, pHase.y)
+                            lineTo(pKam.x, pKam.y)
+                        }
+                        // Solid dark base
+                        drawPath(
+                            path = railPath,
+                            color = Color(0xFF475569),
+                            style = Stroke(
+                                width = 3.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+                        // Dashed white ticks
+                        drawPath(
+                            path = railPath,
+                            color = Color.White,
+                            style = Stroke(
+                                width = 2.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
+                            )
+                        )
                     }
-                    // Solid dark base
-                    drawPath(
-                        path = railPath,
-                        color = Color(0xFF475569),
-                        style = Stroke(
-                            width = 3.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round
+                }
+
+                // ==========================================
+                // LAYER 4: LATITUDE / LONGITUDE RADAR GRID
+                // ==========================================
+                val gridStep = when {
+                    zoom > 350000 -> 0.001
+                    zoom > 150000 -> 0.002
+                    zoom > 50000  -> 0.005
+                    zoom > 15000  -> 0.02
+                    zoom > 5000   -> 0.1
+                    zoom > 1500   -> 0.5
+                    zoom > 500    -> 2.0
+                    else          -> 5.0
+                }
+
+                val startGridLat = Math.floor(minLatVal / gridStep) * gridStep
+                val endGridLat = Math.ceil(maxLatVal / gridStep) * gridStep
+                val startGridLng = Math.floor(minLngVal / gridStep) * gridStep
+                val endGridLng = Math.ceil(maxLngVal / gridStep) * gridStep
+
+                // Longitude dashed grid lines
+                var curGridLng = startGridLng
+                while (curGridLng <= endGridLng) {
+                    val pT = project(endGridLat, curGridLng)
+                    val pB = project(startGridLat, curGridLng)
+                    drawLine(
+                        color = Color(0x221E293B),
+                        start = pT,
+                        end = pB,
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 15f), 0f)
+                    )
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.drawText(
+                            String.format("%.3f°E", curGridLng),
+                            pT.x + 8f,
+                            drawHeight - 35f,
+                            gridLabelPaint
                         )
+                    }
+                    curGridLng += gridStep
+                }
+
+                // Latitude dashed grid lines
+                var curGridLat = startGridLat
+                while (curGridLat <= endGridLat) {
+                    val pL = project(curGridLat, minLngVal)
+                    val pR = project(curGridLat, maxLngVal)
+                    drawLine(
+                        color = Color(0x221E293B),
+                        start = pL,
+                        end = pR,
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 15f), 0f)
                     )
-                    // Dashed white ticks
-                    drawPath(
-                        path = railPath,
-                        color = Color.White,
-                        style = Stroke(
-                            width = 2.dp.toPx(),
-                            cap = StrokeCap.Round,
-                            join = StrokeJoin.Round,
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
+                    drawIntoCanvas { canvas ->
+                        canvas.nativeCanvas.drawText(
+                            String.format("%.3f°N", curGridLat),
+                            35f,
+                            pL.y - 8f,
+                            gridLabelPaint
                         )
-                    )
+                    }
+                    curGridLat += gridStep
                 }
-            }
 
-            // ==========================================
-            // LAYER 4: LATITUDE / LONGITUDE RADAR GRID
-            // ==========================================
-            val gridStep = when {
-                zoom > 350000 -> 0.001
-                zoom > 150000 -> 0.002
-                zoom > 50000  -> 0.005
-                zoom > 15000  -> 0.02
-                zoom > 5000   -> 0.1
-                zoom > 1500   -> 0.5
-                zoom > 500    -> 2.0
-                else          -> 5.0
-            }
+                // ==========================================
+                // LAYER 5: PRESET ROAD OVERLAY (The Driving Course)
+                // ==========================================
+                // Loop and draw all predefined roads as light secondary roads
+                NavigationEngine.PRESET_ROADS.forEach { road ->
+                    if (road.nodes.isNotEmpty()) {
+                        val isSelected = road.id == selectedRoad.id
+                        val rPath = Path().apply {
+                            val first = project(road.nodes[0].latitude, road.nodes[0].longitude)
+                            moveTo(first.x, first.y)
+                            for (idx in 1 until road.nodes.size) {
+                                val prev = project(road.nodes[idx - 1].latitude, road.nodes[idx - 1].longitude)
+                                val next = project(road.nodes[idx].latitude, road.nodes[idx].longitude)
+                                // Smoothly interpolate points based on zoom
+                                val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
+                                for (k in 1..kSteps) {
+                                    val fraction = k.toFloat() / (kSteps + 1).toFloat()
+                                    val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
+                                    lineTo(lerpPt.x, lerpPt.y)
+                                }
+                                lineTo(next.x, next.y)
+                            }
+                        }
 
-            val startGridLat = Math.floor(minLat / gridStep) * gridStep
-            val endGridLat = Math.ceil(maxLat / gridStep) * gridStep
-            val startGridLng = Math.floor(minLng / gridStep) * gridStep
-            val endGridLng = Math.ceil(maxLng / gridStep) * gridStep
+                        // 1. Casing / Shadow outline
+                        drawPath(
+                            path = rPath,
+                            color = if (isSelected) Color(0xFF64748B) else Color(0x3394A3B8),
+                            style = Stroke(
+                                width = (if (isSelected) 15.dp else 10.dp).toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
 
-            // Longitude dashed grid lines
-            var curGridLng = startGridLng
-            while (curGridLng <= endGridLng) {
-                val pT = project(endGridLat, curGridLng)
-                val pB = project(startGridLat, curGridLng)
-                drawLine(
-                    color = Color(0x221E293B),
-                    start = pT,
-                    end = pB,
-                    strokeWidth = 1.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 15f), 0f)
-                )
-                drawIntoCanvas { canvas ->
-                    canvas.nativeCanvas.drawText(
-                        String.format("%.3f°E", curGridLng),
-                        pT.x + 8f,
-                        height - 35f,
-                        gridLabelPaint
-                    )
+                        // 2. Core Asphalt Lane Surface
+                        drawPath(
+                            path = rPath,
+                            color = if (isSelected) Color(0xFF334155) else Color(0x3AAFA89F),
+                            style = Stroke(
+                                width = (if (isSelected) 10.dp else 6.dp).toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round
+                            )
+                        )
+
+                        // 3. Middle yellow/white separating stripe line
+                        if (isSelected) {
+                            drawPath(
+                                path = rPath,
+                                color = Color(0xFFFBBF24), // Selected: bright yellow stripe
+                                style = Stroke(
+                                    width = 1.6.dp.toPx(),
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round,
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 15f), 0f)
+                                )
+                            )
+                        } else {
+                            drawPath(
+                                path = rPath,
+                                color = Color.White.copy(alpha = 0.5f), // Unselected: subtle white dashed center dividing line
+                                style = Stroke(
+                                    width = 1.0.dp.toPx(),
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round,
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 12f), 0f)
+                                )
+                            )
+                        }
+
+                        if (isSelected) {
+
+                            // 4. Render Tunnel tubes (Overlay dark mountain tubes with orange caution lines)
+                            road.tunnelRanges.forEach { tRange ->
+                                val rStart = tRange.first.coerceIn(0, road.nodes.size - 1)
+                                val rEnd = tRange.last.coerceIn(0, road.nodes.size - 1)
+                                if (rStart < rEnd) {
+                                    val tPath = Path().apply {
+                                        val start = project(road.nodes[rStart].latitude, road.nodes[rStart].longitude)
+                                        moveTo(start.x, start.y)
+                                        for (i in rStart + 1..rEnd) {
+                                            val prev = project(road.nodes[i - 1].latitude, road.nodes[i - 1].longitude)
+                                            val next = project(road.nodes[i].latitude, road.nodes[i].longitude)
+                                            // Add intermediate points
+                                            val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
+                                            for (k in 1..kSteps) {
+                                                val fraction = k.toFloat() / (kSteps + 1).toFloat()
+                                                val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
+                                                lineTo(lerpPt.x, lerpPt.y)
+                                            }
+                                            lineTo(next.x, next.y)
+                                        }
+                                    }
+
+                                    // Dark thick outer tunnel concrete walls
+                                    drawPath(
+                                        path = tPath,
+                                        color = Color(0xFF1E293B),
+                                        style = Stroke(
+                                            width = 20.dp.toPx(),
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
+
+                                    // Pitch black tunnel interior lane
+                                    drawPath(
+                                        path = tPath,
+                                        color = Color(0xFF020617),
+                                        style = Stroke(
+                                            width = 11.dp.toPx(),
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
+
+                                    // Glowing neon warning indicators along the tunnel wall
+                                    drawPath(
+                                        path = tPath,
+                                        color = Color(0xFFF97316),
+                                        style = Stroke(
+                                            width = 1.5.dp.toPx(),
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round,
+                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 12f), 0f)
+                                        )
+                                    )
+
+                                    // Render "TUNNEL" label at the center of each dome
+                                    val midIdx = (rStart + rEnd) / 2
+                                    val midPt = project(road.nodes[midIdx].latitude, road.nodes[midIdx].longitude)
+                                    drawIntoCanvas { canvas ->
+                                        val tLabelPaint = Paint().apply {
+                                            color = android.graphics.Color.WHITE
+                                            textSize = 21f
+                                            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                                            textAlign = Paint.Align.CENTER
+                                        }
+                                        canvas.nativeCanvas.drawText(
+                                            "トンネル (TUNNEL)",
+                                            midPt.x,
+                                            midPt.y - 18.dp.toPx(),
+                                            tLabelPaint
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                curGridLng += gridStep
-            }
 
-            // Latitude dashed grid lines
-            var curGridLat = startGridLat
-            while (curGridLat <= endGridLat) {
-                val pL = project(curGridLat, minLng)
-                val pR = project(curGridLat, maxLng)
-                drawLine(
-                    color = Color(0x221E293B),
-                    start = pL,
-                    end = pR,
-                    strokeWidth = 1.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 15f), 0f)
-                )
-                drawIntoCanvas { canvas ->
-                    canvas.nativeCanvas.drawText(
-                        String.format("%.3f°N", curGridLat),
-                        35f,
-                        pL.y - 8f,
-                        gridLabelPaint
-                    )
-                }
-                curGridLat += gridStep
-            }
-
-            // ==========================================
-            // LAYER 5: PRESET ROAD OVERLAY (The Driving Course)
-            // ==========================================
-            // Loop and draw all predefined roads as light secondary roads
-            NavigationEngine.PRESET_ROADS.forEach { road ->
-                if (road.nodes.isNotEmpty()) {
-                    val isSelected = road.id == selectedRoad.id
-                    val rPath = Path().apply {
-                        val first = project(road.nodes[0].latitude, road.nodes[0].longitude)
-                        moveTo(first.x, first.y)
-                        for (idx in 1 until road.nodes.size) {
-                            val prev = project(road.nodes[idx - 1].latitude, road.nodes[idx - 1].longitude)
-                            val next = project(road.nodes[idx].latitude, road.nodes[idx].longitude)
-                            // Smoothly interpolate points based on zoom
+                // ==========================================
+                // LAYER 7: RECORDED GPS ACCUMULATED TRAIL (Blue Ribbon)
+                // ==========================================
+                if (recordedPath.isNotEmpty()) {
+                    val trailPath = Path().apply {
+                        val origin = project(recordedPath[0].latitude, recordedPath[0].longitude)
+                        moveTo(origin.x, origin.y)
+                        for (i in 1 until recordedPath.size) {
+                            val prev = project(recordedPath[i - 1].latitude, recordedPath[i - 1].longitude)
+                            val next = project(recordedPath[i].latitude, recordedPath[i].longitude)
+                            // Add intermediate points to smoothen angles
                             val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
                             for (k in 1..kSteps) {
                                 val fraction = k.toFloat() / (kSteps + 1).toFloat()
@@ -590,378 +745,221 @@ fun ScenicMapView(
                         }
                     }
 
-                    // 1. Casing / Shadow outline
+                    // Wide soft tracking glow
                     drawPath(
-                        path = rPath,
-                        color = if (isSelected) Color(0xFF64748B) else Color(0x3394A3B8),
+                        path = trailPath,
+                        color = routeColor.copy(alpha = 0.25f),
                         style = Stroke(
-                            width = (if (isSelected) 15.dp else 10.dp).toPx(),
+                            width = 12.dp.toPx(),
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round
                         )
                     )
 
-                    // 2. Core Asphalt Lane Surface
+                    // Strong visible royal blue alignment core ribbon
                     drawPath(
-                        path = rPath,
-                        color = if (isSelected) Color(0xFF334155) else Color(0x3AAFA89F),
+                        path = trailPath,
+                        color = routeColor,
                         style = Stroke(
-                            width = (if (isSelected) 10.dp else 6.dp).toPx(),
+                            width = 5.5.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
+                        )
+                    )
+                }
+
+                // ==========================================
+                // LAYER 8: HISTORICAL DATABASE OVERLAY TRAIL (Green Coral)
+                // ==========================================
+                if (!overlayRoutePoints.isNullOrEmpty() && overlayRoutePoints.size > 1) {
+                    val oPath = Path().apply {
+                        val sPoint = project(overlayRoutePoints[0].latitude, overlayRoutePoints[0].longitude)
+                        moveTo(sPoint.x, sPoint.y)
+                        for (i in 1 until overlayRoutePoints.size) {
+                            val next = project(overlayRoutePoints[i].latitude, overlayRoutePoints[i].longitude)
+                            lineTo(next.x, next.y)
+                        }
+                    }
+
+                    // Semi-transparent base
+                    drawPath(
+                        path = oPath,
+                        color = Color(0x3F10B981),
+                        style = Stroke(
+                            width = 10.dp.toPx(),
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round
                         )
                     )
 
-                    // 3. Middle yellow/white separating stripe line
-                    if (isSelected) {
-                        drawPath(
-                            path = rPath,
-                            color = Color(0xFFFBBF24), // Selected: bright yellow stripe
-                            style = Stroke(
-                                width = 1.6.dp.toPx(),
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round,
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 15f), 0f)
-                            )
+                    // Emerald green lining
+                    drawPath(
+                        path = oPath,
+                        color = Color(0xFF10B981),
+                        style = Stroke(
+                            width = 4.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            join = StrokeJoin.Round
                         )
-                    } else {
-                        drawPath(
-                            path = rPath,
-                            color = Color.White.copy(alpha = 0.5f), // Unselected: subtle white dashed center dividing line
-                            style = Stroke(
-                                width = 1.0.dp.toPx(),
-                                cap = StrokeCap.Round,
-                                join = StrokeJoin.Round,
-                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 12f), 0f)
-                            )
-                        )
-                    }
+                    )
+                }
 
-                    if (isSelected) {
-
-                        // 4. Render Tunnel tubes (Overlay dark mountain tubes with orange caution lines)
-                        road.tunnelRanges.forEach { tRange ->
-                            val rStart = tRange.first.coerceIn(0, road.nodes.size - 1)
-                            val rEnd = tRange.last.coerceIn(0, road.nodes.size - 1)
-                            if (rStart < rEnd) {
-                                val tPath = Path().apply {
-                                    val start = project(road.nodes[rStart].latitude, road.nodes[rStart].longitude)
-                                    moveTo(start.x, start.y)
-                                    for (i in rStart + 1..rEnd) {
-                                        val prev = project(road.nodes[i - 1].latitude, road.nodes[i - 1].longitude)
-                                        val next = project(road.nodes[i].latitude, road.nodes[i].longitude)
-                                        // Add intermediate points
-                                        val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
-                                        for (k in 1..kSteps) {
-                                            val fraction = k.toFloat() / (kSteps + 1).toFloat()
-                                            val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
-                                            lineTo(lerpPt.x, lerpPt.y)
-                                        }
-                                        lineTo(next.x, next.y)
-                                    }
-                                }
-
-                                // Dark thick outer tunnel concrete walls
-                                drawPath(
-                                    path = tPath,
-                                    color = Color(0xFF1E293B),
-                                    style = Stroke(
-                                        width = 20.dp.toPx(),
-                                        cap = StrokeCap.Round,
-                                        join = StrokeJoin.Round
+                // ==========================================
+                // LAYER 9: LANDMARKS AND POI FLAGMARK LABELS / MAJOR CITIES
+                // ==========================================
+                if (zoom > 30000f) {
+                    landmarks.forEach { lm ->
+                        val lmPt = project(lm.lat, lm.lng)
+                        
+                        // Only draw if within bounds for optimized processing
+                        if (lmPt.x in -100f..(drawWidth + 100f) && lmPt.y in -100f..(drawHeight + 100f)) {
+                            // Draw localized icons based on features
+                            when {
+                                lm.isShrine -> {
+                                    // Top Red bar
+                                    drawLine(
+                                        color = Color(0xFFE11D48),
+                                        start = Offset(lmPt.x - 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                        end = Offset(lmPt.x + 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                        strokeWidth = 3.dp.toPx(),
+                                        cap = StrokeCap.Round
                                     )
-                                )
-
-                                // Pitch black tunnel interior lane
-                                drawPath(
-                                    path = tPath,
-                                    color = Color(0xFF020617),
-                                    style = Stroke(
-                                        width = 11.dp.toPx(),
-                                        cap = StrokeCap.Round,
-                                        join = StrokeJoin.Round
+                                    // Columns
+                                    drawLine(
+                                        color = Color(0xFFE11D48),
+                                        start = Offset(lmPt.x - 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                        end = Offset(lmPt.x - 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
+                                        strokeWidth = 2.dp.toPx()
                                     )
-                                )
-
-                                // Glowing neon warning indicators along the tunnel wall
-                                drawPath(
-                                    path = tPath,
-                                    color = Color(0xFFF97316),
-                                    style = Stroke(
-                                        width = 1.5.dp.toPx(),
-                                        cap = StrokeCap.Round,
-                                        join = StrokeJoin.Round,
-                                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 12f), 0f)
-                                    )
-                                )
-
-                                // Render "TUNNEL" label at the center of each dome
-                                val midIdx = (rStart + rEnd) / 2
-                                val midPt = project(road.nodes[midIdx].latitude, road.nodes[midIdx].longitude)
-                                drawIntoCanvas { canvas ->
-                                    val tLabelPaint = Paint().apply {
-                                        color = android.graphics.Color.WHITE
-                                        textSize = 21f
-                                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                                        textAlign = Paint.Align.CENTER
-                                    }
-                                    canvas.nativeCanvas.drawText(
-                                        "トンネル (TUNNEL)",
-                                        midPt.x,
-                                        midPt.y - 18.dp.toPx(),
-                                        tLabelPaint
+                                    drawLine(
+                                        color = Color(0xFFE11D48),
+                                        start = Offset(lmPt.x + 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
+                                        end = Offset(lmPt.x + 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
+                                        strokeWidth = 2.dp.toPx()
                                     )
                                 }
+                                lm.isMountain -> {
+                                    // Peak triangle
+                                    val triPath = Path().apply {
+                                        moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
+                                        lineTo(lmPt.x - 10.dp.toPx(), lmPt.y + 6.dp.toPx())
+                                        lineTo(lmPt.x + 10.dp.toPx(), lmPt.y + 6.dp.toPx())
+                                        close()
+                                    }
+                                    drawPath(triPath, Color(0xFF166534))
+                                    // Snow cap
+                                    val snowPath = Path().apply {
+                                        moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
+                                        lineTo(lmPt.x - 3.dp.toPx(), lmPt.y - 5.dp.toPx())
+                                        lineTo(lmPt.x + 3.dp.toPx(), lmPt.y - 5.dp.toPx())
+                                        close()
+                                    }
+                                    drawPath(snowPath, Color.White)
+                                }
+                                lm.isOcean -> {
+                                    // Concentric blue POI bubbles
+                                    drawCircle(
+                                        color = Color(0x3F0284C7),
+                                        radius = 10.dp.toPx(),
+                                        center = lmPt
+                                    )
+                                    drawCircle(
+                                        color = Color(0xFF0284C7),
+                                        radius = 4.dp.toPx(),
+                                        center = lmPt
+                                    )
+                                }
+                                else -> {
+                                    // Generic map flag marker pin
+                                    val pinPath = Path().apply {
+                                        moveTo(lmPt.x, lmPt.y)
+                                        cubicTo(lmPt.x - 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
+                                                lmPt.x - 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
+                                                lmPt.x, lmPt.y - 14.dp.toPx())
+                                        cubicTo(lmPt.x + 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
+                                                lmPt.x + 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
+                                                lmPt.x, lmPt.y)
+                                        close()
+                                    }
+                                    drawPath(pinPath, lm.color)
+                                }
+                            }
+
+                            // Render gorgeous high contrast vector map text labels
+                            drawIntoCanvas { canvas ->
+                                canvas.nativeCanvas.drawText(
+                                    lm.name,
+                                    lmPt.x,
+                                    lmPt.y + 19.dp.toPx(),
+                                    landmarkLabelPaint
+                                )
+                                canvas.nativeCanvas.drawText(
+                                    lm.description,
+                                    lmPt.x,
+                                    lmPt.y + 29.dp.toPx(),
+                                    landmarkSubPaint
+                                )
                             }
                         }
                     }
-                }
-            }
-
-            // ==========================================
-            // LAYER 7: RECORDED GPS ACCUMULATED TRAIL (Blue Ribbon)
-            // ==========================================
-            if (recordedPath.isNotEmpty()) {
-                val trailPath = Path().apply {
-                    val origin = project(recordedPath[0].latitude, recordedPath[0].longitude)
-                    moveTo(origin.x, origin.y)
-                    for (i in 1 until recordedPath.size) {
-                        val prev = project(recordedPath[i - 1].latitude, recordedPath[i - 1].longitude)
-                        val next = project(recordedPath[i].latitude, recordedPath[i].longitude)
-                        // Add intermediate points to smoothen angles
-                        val kSteps = (zoom / 500f).toInt().coerceIn(1, 100)
-                        for (k in 1..kSteps) {
-                            val fraction = k.toFloat() / (kSteps + 1).toFloat()
-                            val lerpPt = androidx.compose.ui.geometry.lerp(prev, next, fraction)
-                            lineTo(lerpPt.x, lerpPt.y)
-                        }
-                        lineTo(next.x, next.y)
-                    }
-                }
-
-                // Wide soft tracking glow
-                drawPath(
-                    path = trailPath,
-                    color = routeColor.copy(alpha = 0.25f),
-                    style = Stroke(
-                        width = 12.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-
-                // Strong visible royal blue alignment core ribbon
-                drawPath(
-                    path = trailPath,
-                    color = routeColor,
-                    style = Stroke(
-                        width = 5.5.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-
-                // Tiny coordinate markers removal requested by user:
-                // recordedPath.forEach { rPoint ->
-                //     val dotPt = project(rPoint.latitude, rPoint.longitude)
-                //     drawCircle(
-                //         color = if (rPoint.isInterpolated) Color(0xFFF97316) else Color(0xFF38BDF8),
-                //         radius = 2.5.dp.toPx(),
-                //         center = dotPt
-                //     )
-                // }
-            }
-
-            // ==========================================
-            // LAYER 8: HISTORICAL DATABASE OVERLAY TRAIL (Green Coral)
-            // ==========================================
-            if (!overlayRoutePoints.isNullOrEmpty() && overlayRoutePoints.size > 1) {
-                val oPath = Path().apply {
-                    val sPoint = project(overlayRoutePoints[0].latitude, overlayRoutePoints[0].longitude)
-                    moveTo(sPoint.x, sPoint.y)
-                    for (i in 1 until overlayRoutePoints.size) {
-                        val next = project(overlayRoutePoints[i].latitude, overlayRoutePoints[i].longitude)
-                        lineTo(next.x, next.y)
-                    }
-                }
-
-                // Semi-transparent base
-                drawPath(
-                    path = oPath,
-                    color = Color(0x3F10B981),
-                    style = Stroke(
-                        width = 10.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-
-                // Emerald green lining
-                drawPath(
-                    path = oPath,
-                    color = Color(0xFF10B981),
-                    style = Stroke(
-                        width = 4.dp.toPx(),
-                        cap = StrokeCap.Round,
-                        join = StrokeJoin.Round
-                    )
-                )
-            }
-
-            // ==========================================
-            // LAYER 9: LANDMARKS AND POI FLAGMARK LABELS / MAJOR CITIES
-            // ==========================================
-            if (zoom > 30000f) {
-                landmarks.forEach { lm ->
-                    val lmPt = project(lm.lat, lm.lng)
-                    
-                    // Only draw if within bounds for optimized processing
-                    if (lmPt.x in -100f..(width + 100f) && lmPt.y in -100f..(height + 100f)) {
-                        // Draw localized icons based on features
-                        when {
-                            lm.isShrine -> {
-                                // Top Red bar
-                                drawLine(
-                                    color = Color(0xFFE11D48),
-                                    start = Offset(lmPt.x - 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                    end = Offset(lmPt.x + 10.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                    strokeWidth = 3.dp.toPx(),
-                                    cap = StrokeCap.Round
-                                )
-                                // Columns
-                                drawLine(
-                                    color = Color(0xFFE11D48),
-                                    start = Offset(lmPt.x - 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                    end = Offset(lmPt.x - 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
-                                    strokeWidth = 2.dp.toPx()
-                                )
-                                drawLine(
-                                    color = Color(0xFFE11D48),
-                                    start = Offset(lmPt.x + 5.dp.toPx(), lmPt.y - 8.dp.toPx()),
-                                    end = Offset(lmPt.x + 5.dp.toPx(), lmPt.y + 6.dp.toPx()),
-                                    strokeWidth = 2.dp.toPx()
-                                )
-                            }
-                            lm.isMountain -> {
-                                // Peak triangle
-                                val triPath = Path().apply {
-                                    moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
-                                    lineTo(lmPt.x - 10.dp.toPx(), lmPt.y + 6.dp.toPx())
-                                    lineTo(lmPt.x + 10.dp.toPx(), lmPt.y + 6.dp.toPx())
-                                    close()
-                                }
-                                drawPath(triPath, Color(0xFF166534))
-                                // Snow cap
-                                val snowPath = Path().apply {
-                                    moveTo(lmPt.x, lmPt.y - 12.dp.toPx())
-                                    lineTo(lmPt.x - 3.dp.toPx(), lmPt.y - 5.dp.toPx())
-                                    lineTo(lmPt.x + 3.dp.toPx(), lmPt.y - 5.dp.toPx())
-                                    close()
-                                }
-                                drawPath(snowPath, Color.White)
-                            }
-                            lm.isOcean -> {
-                                // Concentric blue POI bubbles
+                } else {
+                    // Render major Japanese cities at national scale
+                    JAPAN_MAJOR_CITIES.forEach { city ->
+                        val cityPt = project(city.lat, city.lng)
+                        if (cityPt.x in -100f..(drawWidth + 100f) && cityPt.y in -100f..(drawHeight + 100f)) {
+                            if (city.isCapital) {
+                                // Gold star outline with crimson core representing Tokyo Capital
                                 drawCircle(
-                                    color = Color(0x3F0284C7),
-                                    radius = 10.dp.toPx(),
-                                    center = lmPt
+                                    color = Color(0xFFF59E0B),
+                                    radius = 7.dp.toPx(),
+                                    center = cityPt
                                 )
                                 drawCircle(
-                                    color = Color(0xFF0284C7),
+                                    color = Color(0xFFEF4444),
                                     radius = 4.dp.toPx(),
-                                    center = lmPt
+                                    center = cityPt
+                                )
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = 1.5.dp.toPx(),
+                                    center = cityPt
+                                )
+                            } else {
+                                // High-contrast clean city marker dot
+                                drawCircle(
+                                    color = Color(0xFF1E293B),
+                                    radius = 4.5.dp.toPx(),
+                                    center = cityPt
+                                )
+                                drawCircle(
+                                    color = Color.White,
+                                    radius = 2.dp.toPx(),
+                                    center = cityPt
                                 )
                             }
-                            else -> {
-                                // Generic map flag marker pin
-                                val pinPath = Path().apply {
-                                    moveTo(lmPt.x, lmPt.y)
-                                    cubicTo(lmPt.x - 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
-                                            lmPt.x - 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
-                                            lmPt.x, lmPt.y - 14.dp.toPx())
-                                    cubicTo(lmPt.x + 5.dp.toPx(), lmPt.y - 14.dp.toPx(),
-                                            lmPt.x + 5.dp.toPx(), lmPt.y - 7.dp.toPx(),
-                                            lmPt.x, lmPt.y)
-                                    close()
+
+                            // Render city name and regional info underneath
+                            drawIntoCanvas { canvas ->
+                                val namePaint = Paint().apply {
+                                    color = android.graphics.Color.parseColor("#1E293B")
+                                    textSize = 11.dp.toPx()
+                                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                                    textAlign = Paint.Align.CENTER
                                 }
-                                drawPath(pinPath, lm.color)
+                                val subPaint = Paint().apply {
+                                    color = android.graphics.Color.parseColor("#64748B")
+                                    textSize = 8.5.dp.toPx()
+                                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                                    textAlign = Paint.Align.CENTER
+                                }
+                                canvas.nativeCanvas.drawText(city.name, cityPt.x, cityPt.y - 8.dp.toPx(), namePaint)
+                                canvas.nativeCanvas.drawText(city.description, cityPt.x, cityPt.y + 11.dp.toPx(), subPaint)
                             }
-                        }
-
-                        // Render gorgeous high contrast vector map text labels
-                        drawIntoCanvas { canvas ->
-                            canvas.nativeCanvas.drawText(
-                                lm.name,
-                                lmPt.x,
-                                lmPt.y + 19.dp.toPx(),
-                                landmarkLabelPaint
-                            )
-                            canvas.nativeCanvas.drawText(
-                                lm.description,
-                                lmPt.x,
-                                lmPt.y + 29.dp.toPx(),
-                                landmarkSubPaint
-                            )
-                        }
-                    }
-                }
-            } else {
-                // Render major Japanese cities at national scale
-                JAPAN_MAJOR_CITIES.forEach { city ->
-                    val cityPt = project(city.lat, city.lng)
-                    if (cityPt.x in -100f..(width + 100f) && cityPt.y in -100f..(height + 100f)) {
-                        if (city.isCapital) {
-                            // Gold star outline with crimson core representing Tokyo Capital
-                            drawCircle(
-                                color = Color(0xFFF59E0B),
-                                radius = 7.dp.toPx(),
-                                center = cityPt
-                            )
-                            drawCircle(
-                                color = Color(0xFFEF4444),
-                                radius = 4.dp.toPx(),
-                                center = cityPt
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = 1.5.dp.toPx(),
-                                center = cityPt
-                            )
-                        } else {
-                            // High-contrast clean city marker dot
-                            drawCircle(
-                                color = Color(0xFF1E293B),
-                                radius = 4.5.dp.toPx(),
-                                center = cityPt
-                            )
-                            drawCircle(
-                                color = Color.White,
-                                radius = 2.dp.toPx(),
-                                center = cityPt
-                            )
-                        }
-
-                        // Render city name and regional info underneath
-                        drawIntoCanvas { canvas ->
-                            val namePaint = Paint().apply {
-                                color = android.graphics.Color.parseColor("#1E293B")
-                                textSize = 11.dp.toPx()
-                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                                textAlign = Paint.Align.CENTER
-                            }
-                            val subPaint = Paint().apply {
-                                color = android.graphics.Color.parseColor("#64748B")
-                                textSize = 8.5.dp.toPx()
-                                typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-                                textAlign = Paint.Align.CENTER
-                            }
-                            canvas.nativeCanvas.drawText(city.name, cityPt.x, cityPt.y - 8.dp.toPx(), namePaint)
-                            canvas.nativeCanvas.drawText(city.description, cityPt.x, cityPt.y + 11.dp.toPx(), subPaint)
                         }
                     }
                 }
             }
+
 
             // ==========================================
             // LAYER 10: COMPASS ROSE HUD (Bottom-Left Side)
