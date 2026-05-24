@@ -36,11 +36,14 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.clip
+import android.graphics.Typeface
+import android.graphics.Paint
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
-import android.graphics.Paint
-import android.graphics.Typeface
 import com.example.util.GeoPoint
 import com.example.util.MockRoad
 import com.example.util.NavigationEngine
@@ -245,6 +248,9 @@ fun ScenicMapView(
     
     // Smooth animated drag tracking offsets
     val animDragOffset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    
+    // Add state for map orientation
+    var isHeadingUp by remember { mutableStateOf(false) }
 
     // Smoothly transition and snap drag offsets back to zero when centering is requested
     LaunchedEffect(autoCenter) {
@@ -352,6 +358,18 @@ fun ScenicMapView(
         // Longitudinal correction angle calculation
         val cosLat = cos(Math.toRadians(centerLat))
 
+        // Determine Map Bearing for rotation (outside Canvas for HUD access)
+        val currentBearingDegrees = if (isHeadingUp && recordedPath.size >= 2) {
+            val pLast = recordedPath.last()
+            val pPrev = recordedPath[recordedPath.size - 2]
+            val dLat = pLast.latitude - pPrev.latitude
+            val dLng = (pLast.longitude - pPrev.longitude) * cosLat
+            val rad = Math.atan2(dLng, dLat)
+            Math.toDegrees(rad).toFloat()
+        } else {
+            0f
+        }
+
         // Mathematical projection converter (WGS84 GPS coordinate -> 2D screen coordinate pixels)
         val project: (Double, Double) -> Offset = { lat, lng ->
             val dx = (lng - centerLng) * cosLat * zoom
@@ -454,10 +472,7 @@ fun ScenicMapView(
             val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
             val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
 
-            // Determine Map Bearing for rotation
-            val currentBearingDegees = 0f
-
-            rotate(degrees = -currentBearingDegees, pivot = Offset(drawWidth / 2f, drawHeight / 2f)) {
+            rotate(degrees = -currentBearingDegrees, pivot = Offset(drawWidth / 2f, drawHeight / 2f)) {
                 // ==========================================
                 // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
                 // ==========================================
@@ -950,62 +965,8 @@ fun ScenicMapView(
                     }
                 }
             }
-
-
-            // ==========================================
-            // LAYER 10: COMPASS ROSE HUD (Bottom-Left Side)
-            // ==========================================
-            val compassCenter = Offset(80.dp.toPx(), height - 200.dp.toPx())
-            val compassRad = 32.dp.toPx()
-            
-            // Outer Dial Circle
-            drawCircle(
-                color = Color(0xEBFFFFFF),
-                radius = compassRad,
-                center = compassCenter
-            )
-            drawCircle(
-                color = Color(0xFF475569),
-                radius = compassRad,
-                center = compassCenter,
-                style = Stroke(width = 1.6.dp.toPx())
-            )
-            
-            // Cardinal directions
-            drawIntoCanvas { canvas ->
-                val p = Paint().apply {
-                    color = android.graphics.Color.parseColor("#475569")
-                    textSize = 22f
-                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                    textAlign = Paint.Align.CENTER
-                }
-                canvas.nativeCanvas.drawText("N", compassCenter.x, compassCenter.y - compassRad + 21f, p)
-                canvas.nativeCanvas.drawText("S", compassCenter.x, compassCenter.y + compassRad - 8f, p)
-            }
-
-            // Compass Magnetic Needle pointing True North
-            val needleLen = compassRad - 10f
-            drawLine(
-                color = Color(0xFFEF4444), // North Pointer (Red)
-                start = compassCenter,
-                end = Offset(compassCenter.x, compassCenter.y - needleLen),
-                strokeWidth = 3.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = Color(0xFF94A3B8), // South Pointer (Slate Grey)
-                start = compassCenter,
-                end = Offset(compassCenter.x, compassCenter.y + needleLen),
-                strokeWidth = 3.dp.toPx(),
-                cap = StrokeCap.Round
-            )
-            // Center pin rivet
-            drawCircle(
-                color = Color(0xFF1E293B),
-                radius = 4.dp.toPx(),
-                center = compassCenter
-            )
         }
+
 
         // ==========================================
         // LAYER 11: CURRENT GPS BEACON PULSATING RIPPLE
@@ -1200,6 +1161,67 @@ fun ScenicMapView(
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+        }
+
+        // ==========================================
+        // COMPASS TOGGLE BUTTON (Google Maps Style)
+        // ==========================================
+        // Positioned Top-Right below the coordinate panel
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 310.dp, end = 12.dp)
+                .size(44.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(Color.White)
+                .border(1.dp, Color(0x3364748B), androidx.compose.foundation.shape.CircleShape)
+                .clickable { isHeadingUp = !isHeadingUp },
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(28.dp)) {
+                val r = size.minDimension / 2
+                val center = Offset(size.width / 2, size.height / 2)
+                
+                // Compass Bearing (How much we need to rotate the needle to point North)
+                // If map is rotated by -bearing, then North is at +bearing.
+                val needleRotation = currentBearingDegrees
+                
+                rotate(needleRotation) {
+                    // Needle Shadow
+                    drawPath(
+                        path = Path().apply {
+                            moveTo(center.x, center.y - r)
+                            lineTo(center.x - 4.dp.toPx(), center.y)
+                            lineTo(center.x + 4.dp.toPx(), center.y)
+                            close()
+                        },
+                        color = Color(0xFFEF4444) // North (Red)
+                    )
+                    drawPath(
+                        path = Path().apply {
+                            moveTo(center.x, center.y + r)
+                            lineTo(center.x - 4.dp.toPx(), center.y)
+                            lineTo(center.x + 4.dp.toPx(), center.y)
+                            close()
+                        },
+                        color = Color(0xFF94A3B8) // South (Grey)
+                    )
+                }
+                
+                // Center dot
+                drawCircle(color = Color(0xFF1E293B), radius = 2.dp.toPx(), center = center)
+            }
+            
+            // Indicator text for Heading-Up mode
+            if (isHeadingUp) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 2.dp)
+                        .size(4.dp)
+                        .background(Color(0xFF3B82F6), androidx.compose.foundation.shape.CircleShape)
+                )
             }
         }
     }
