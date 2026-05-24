@@ -1,37 +1,30 @@
 package com.example.ui
 
-import androidx.compose.foundation.Canvas
+import android.annotation.SuppressLint
+import android.webkit.JavascriptInterface
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.util.GeoPoint
 import com.example.util.MockRoad
-import kotlin.math.cos
-import kotlin.math.sin
 
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun ScenicMapView(
     currentLocation: GeoPoint,
@@ -45,259 +38,221 @@ fun ScenicMapView(
     onMapDragged: (() -> Unit)? = null,
     onReCenter: (() -> Unit)? = null
 ) {
-    // マニュアルドラッグオフセット
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    val webViewInstance = remember { mutableStateOf<WebView?>(null) }
+    val isPageLoaded = remember { mutableStateOf(false) }
 
-    // autoCenter が true になったら、直ちにドラッグ位置をリセットする
-    LaunchedEffect(autoCenter, currentLocation) {
-        if (autoCenter) {
-            dragOffset = Offset.Zero
+    // Convert the project zoom scale to Leaflet OSM zoom level (11-18)
+    val osmZoom = remember(zoomScale) {
+        (12f + (zoomScale - 80000f) / (500000f - 80000f) * 6f).coerceIn(11f, 18f)
+    }
+
+    // Leaflet HTML with high contrast & accurate vector paths drawing
+    val htmlContent = remember {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+            <style>
+                html, body, #map {
+                    width: 100%;
+                    height: 100%;
+                    margin: 0;
+                    padding: 0;
+                    background: #f1f5f9;
+                }
+                .leaflet-control-zoom {
+                    display: none !important;
+                }
+                .leaflet-control-attribution {
+                    font-size: 8px !important;
+                }
+            </style>
+        </head>
+        <body>
+            <div id="map"></div>
+            <script>
+                var map = L.map('map', {
+                    zoomControl: false,
+                    attributionControl: true
+                }).setView([${currentLocation.latitude}, ${currentLocation.longitude}], 15);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© OpenStreetMap drivers'
+                }).addTo(map);
+
+                // Custom Location PIN with neon green inner core and pulsating ripple ring
+                var curMarkerIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `
+                        <div style="position: relative; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+                            <div style="position: absolute; width: 28px; height: 28px; border-radius: 50%; background: rgba(16, 185, 129, 0.4); animation: pulse 1.6s infinite;"></div>
+                            <div style="position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #ffffff; border: 2px solid #1e3a8a; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,0.4);">
+                                <div style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></div>
+                            </div>
+                        </div>
+                        <style>
+                            @keyframes pulse {
+                                0% { transform: scale(0.6); opacity: 1; }
+                                100% { transform: scale(2.2); opacity: 0; }
+                            }
+                        </style>
+                    `,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
+                });
+
+                var currentMarker = L.marker([${currentLocation.latitude}, ${currentLocation.longitude}], { icon: curMarkerIcon }).addTo(map);
+
+                // Blue trace line representing current active real GPS coordinates path
+                var recordedPolyline = L.polyline([], {
+                    color: '#1E3A8A',
+                    weight: 5,
+                    opacity: 0.9,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(map);
+
+                // Dark grey line showing selection road guidelines
+                var roadPolyline = L.polyline([], {
+                    color: '#64748B',
+                    weight: 6,
+                    opacity: 0.7,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(map);
+
+                // Emerald green comparison trail line showing database history overlay
+                var overlayPolyline = L.polyline([], {
+                    color: '#10B981',
+                    weight: 4,
+                    opacity: 0.95,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }).addTo(map);
+
+                var isAutoCenterEnabled = true;
+
+                // Monitor user panning to toggle AutoCenter flag off
+                map.on('dragstart', function() {
+                    if (window.AndroidBridge) {
+                        window.AndroidBridge.onMapDragged();
+                    }
+                });
+
+                function updateCurrentLocation(lat, lng) {
+                    var newLatLng = new L.LatLng(lat, lng);
+                    currentMarker.setLatLng(newLatLng);
+                    if (isAutoCenterEnabled) {
+                        map.panTo(newLatLng);
+                    }
+                }
+
+                function setRecordedPath(coordsJson) {
+                    try {
+                        var coords = JSON.parse(coordsJson);
+                        recordedPolyline.setLatLngs(coords);
+                    } catch(e) {}
+                }
+
+                function setRoadPath(coordsJson) {
+                    try {
+                        var coords = JSON.parse(coordsJson);
+                        roadPolyline.setLatLngs(coords);
+                    } catch(e) {}
+                }
+
+                function setOverlayPath(coordsJson) {
+                    try {
+                        var coords = JSON.parse(coordsJson);
+                        overlayPolyline.setLatLngs(coords);
+                    } catch(e) {}
+                }
+
+                function setZoom(level) {
+                    map.setZoom(level);
+                }
+
+                function setAutoCenter(enabled) {
+                    isAutoCenterEnabled = enabled;
+                    if (enabled) {
+                        map.panTo(currentMarker.getLatLng());
+                    }
+                }
+            </script>
+        </body>
+        </html>
+        """.trimIndent()
+    }
+
+    // Synchronize data changes inside WebView
+    LaunchedEffect(
+        isPageLoaded.value,
+        currentLocation,
+        recordedPath,
+        overlayRoutePoints,
+        selectedRoad,
+        autoCenter,
+        osmZoom
+    ) {
+        if (isPageLoaded.value) {
+            val webView = webViewInstance.value ?: return@LaunchedEffect
+
+            webView.evaluateJavascript("setAutoCenter($autoCenter)", null)
+            webView.evaluateJavascript("setZoom($osmZoom)", null)
+            webView.evaluateJavascript("updateCurrentLocation(${currentLocation.latitude}, ${currentLocation.longitude})", null)
+
+            val recordedJson = recordedPath.joinToString(",", prefix = "[", postfix = "]") { point ->
+                "[${point.latitude},${point.longitude}]"
+            }
+            webView.evaluateJavascript("setRecordedPath('$recordedJson')", null)
+
+            val overlayJson = overlayRoutePoints?.joinToString(",", prefix = "[", postfix = "]") { point ->
+                "[${point.latitude},${point.longitude}]"
+            } ?: "[]"
+            webView.evaluateJavascript("setOverlayPath('$overlayJson')", null)
+
+            val roadJson = selectedRoad.nodes.joinToString(",", prefix = "[", postfix = "]") { point ->
+                "[${point.latitude},${point.longitude}]"
+            }
+            webView.evaluateJavascript("setRoadPath('$roadJson')", null)
         }
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFFF1F5F9)) // 美しいライトグレー背景
-            .pointerInput(autoCenter) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    dragOffset += dragAmount
-                    onMapDragged?.invoke()
-                }
-            }
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            
-            // 投影用基準緯度に合わせたcos補正
-            val latRad = Math.toRadians(currentLocation.latitude)
-            val cosLat = cos(latRad).toFloat()
+    Box(modifier = modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    webViewInstance.value = this
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
+                    
+                    addJavascriptInterface(object : Any() {
+                        @JavascriptInterface
+                        fun onMapDragged() {
+                            onMapDragged?.invoke()
+                        }
+                    }, "AndroidBridge")
 
-            // 緯度経度からキャンバス座標へのマッピング関数
-            fun toCanvasOffset(lat: Double, lng: Double): Offset {
-                val latDiff = lat - currentLocation.latitude
-                val lngDiff = lng - currentLocation.longitude
-                
-                val x = center.x + (lngDiff * zoomScale * cosLat) + dragOffset.x
-                val y = center.y - (latDiff * zoomScale) + dragOffset.y
-                return Offset(x.toFloat(), y.toFloat())
-            }
-
-            // 1. 背景グリッドの描画 (100ピクセル間隔、緯度経度の目安として)
-            val gridSpacing = 120f
-            val startX = (dragOffset.x % gridSpacing)
-            val startY = (dragOffset.y % gridSpacing)
-            
-            // 縦グリッド
-            var xG = startX
-            while (xG < size.width) {
-                if (xG > 0) {
-                    drawLine(
-                        color = Color(0xFFE2E8F0),
-                        start = Offset(xG, 0f),
-                        end = Offset(xG, size.height),
-                        strokeWidth = 1f
-                    )
-                }
-                xG += gridSpacing
-            }
-            // 横グリッド
-            var yG = startY
-            while (yG < size.height) {
-                if (yG > 0) {
-                    drawLine(
-                        color = Color(0xFFE2E8F0),
-                        start = Offset(0f, yG),
-                        end = Offset(size.width, yG),
-                        strokeWidth = 1f
-                    )
-                }
-                yG += gridSpacing
-            }
-
-            // 2. 選択されたコース道路の描画 (selectedRoad)
-            if (selectedRoad.nodes.isNotEmpty()) {
-                val roadPath = Path()
-                selectedRoad.nodes.forEachIndexed { index, node ->
-                    val offset = toCanvasOffset(node.latitude, node.longitude)
-                    if (index == 0) {
-                        roadPath.moveTo(offset.x, offset.y)
-                    } else {
-                        roadPath.lineTo(offset.x, offset.y)
-                    }
-                }
-                
-                // 道路の下地（太めのアスファルト縁取り）
-                drawPath(
-                    path = roadPath,
-                    color = Color(0xFFCBD5E1),
-                    style = Stroke(width = 32f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                )
-                // 道路の中心（白色のアスファルト）
-                drawPath(
-                    path = roadPath,
-                    color = Color.White,
-                    style = Stroke(width = 20f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                )
-
-                // トンネル区間の描画（点線などで表現）
-                selectedRoad.tunnelRanges.forEach { range ->
-                    val tunnelPath = Path()
-                    var first = true
-                    for (i in range.first..range.last) {
-                        if (i < selectedRoad.nodes.size) {
-                            val node = selectedRoad.nodes[i]
-                            val offset = toCanvasOffset(node.latitude, node.longitude)
-                            if (first) {
-                                tunnelPath.moveTo(offset.x, offset.y)
-                                first = false
-                            } else {
-                                tunnelPath.lineTo(offset.x, offset.y)
-                            }
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            isPageLoaded.value = true
                         }
                     }
-                    // トンネルオーバーレイ
-                    drawPath(
-                        path = tunnelPath,
-                        color = Color(0xFF475569), // ダークグレーのトンネル
-                        style = Stroke(width = 24f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                    )
-                    drawPath(
-                        path = tunnelPath,
-                        color = Color(0xFF1E293B), // インナー
-                        style = Stroke(width = 14f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                    )
+
+                    loadDataWithBaseURL("https://openstreetmap.org", htmlContent, "text/html", "UTF-8", null)
                 }
-            }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
 
-            // 3. 過去保存トレイル（保存済みの通過ルート）緑色
-            if (!overlayRoutePoints.isNullOrEmpty() && overlayRoutePoints.size > 1) {
-                val overlayPath = Path()
-                overlayRoutePoints.forEachIndexed { index, pt ->
-                    val offset = toCanvasOffset(pt.latitude, pt.longitude)
-                    if (index == 0) {
-                        overlayPath.moveTo(offset.x, offset.y)
-                    } else {
-                        overlayPath.lineTo(offset.x, offset.y)
-                    }
-                }
-                drawPath(
-                    path = overlayPath,
-                    color = Color(0xFF10B981).copy(alpha = 0.4f),
-                    style = Stroke(width = 24f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                )
-                drawPath(
-                    path = overlayPath,
-                    color = Color(0xFF10B981),
-                    style = Stroke(width = 12f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                )
-            }
-
-            // 4. 今回リアルタイム計測中の走行軌跡 (recordedPath) 青色
-            if (recordedPath.size > 1) {
-                val trackPath = Path()
-                recordedPath.forEachIndexed { index, pt ->
-                    val offset = toCanvasOffset(pt.latitude, pt.longitude)
-                    if (index == 0) {
-                        trackPath.moveTo(offset.x, offset.y)
-                    } else {
-                        trackPath.lineTo(offset.x, offset.y)
-                    }
-                }
-                
-                // 軌跡のブルー影
-                drawPath(
-                    path = trackPath,
-                    color = Color(0xFF1A73E8).copy(alpha = 0.35f),
-                    style = Stroke(width = 24f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                )
-                // 軌跡の実線
-                drawPath(
-                    path = trackPath,
-                    color = Color(0xFF1A73E8),
-                    style = Stroke(width = 12f, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round)
-                )
-
-                // 補間計測地点（トンネル自律推測などの点）をオレンジの丸で描画
-                recordedPath.forEach { pt ->
-                    if (pt.isInterpolated) {
-                        val offset = toCanvasOffset(pt.latitude, pt.longitude)
-                        drawCircle(
-                            color = Color(0xFFEA580C),
-                            radius = 12f,
-                            center = offset
-                        )
-                        drawCircle(
-                            color = Color.White,
-                            radius = 6f,
-                            center = offset
-                        )
-                    }
-                }
-            }
-
-            // 5. 現在地自車マーカーの描画
-            // 現在地は常に (center + dragOffset)
-            val carCenter = center + dragOffset
-
-            // 進行方向（ベアリング）の計算
-            val bearingDegrees = if (recordedPath.size >= 2) {
-                val last = recordedPath.last()
-                val prev = recordedPath[recordedPath.size - 2]
-                val latD = last.latitude - prev.latitude
-                val lngD = (last.longitude - prev.longitude) * cosLat
-                val rad = Math.atan2(lngD, latD)
-                Math.toDegrees(rad).toFloat()
-            } else if (selectedRoad.nodes.size >= 2) {
-                val first = selectedRoad.nodes[0]
-                val second = selectedRoad.nodes[1]
-                val latD = second.latitude - first.latitude
-                val lngD = (second.longitude - first.longitude) * cosLat
-                val rad = Math.atan2(lngD, latD)
-                Math.toDegrees(rad).toFloat()
-            } else {
-                0f
-            }
-
-            // 回転した自車アイコン（三角矢印と波紋）
-            // 波紋サークル
-            drawCircle(
-                color = Color(0xFF1A73E8).copy(alpha = 0.18f),
-                radius = 64f,
-                center = carCenter
-            )
-            drawCircle(
-                color = Color(0xFF1A73E8).copy(alpha = 0.35f),
-                radius = 42f,
-                center = carCenter
-            )
-
-            // 三角形の進行方向アロー
-            rotate(degrees = bearingDegrees, pivot = carCenter) {
-                val arrowPath = Path().apply {
-                    moveTo(carCenter.x, carCenter.y - 22f)
-                    lineTo(carCenter.x - 14f, carCenter.y + 16f)
-                    lineTo(carCenter.x, carCenter.y + 8f)
-                    lineTo(carCenter.x + 14f, carCenter.y + 16f)
-                    close()
-                }
-                
-                // 縁取り
-                drawPath(
-                    path = arrowPath,
-                    color = Color.White,
-                    style = Stroke(width = 6f)
-                )
-                // 塗りつぶし
-                drawPath(
-                    path = arrowPath,
-                    color = Color(0xFF1A73E8)
-                )
-            }
-        }
-
-        // Coordinates Status overlay HUD
+        // Coordinates Status Overlay HUD
         Card(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xDDFFFFFF)),
@@ -323,7 +278,7 @@ fun ScenicMapView(
                             )
                     )
                     Text(
-                        text = "GPS リアルタイム測位",
+                        text = "オフライン対応・OSM広域マップ",
                         color = Color(0xFF1A73E8),
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Black
@@ -344,9 +299,9 @@ fun ScenicMapView(
                     fontWeight = FontWeight.Bold
                 )
                 val statusLabel = when (gpsStatus) {
-                    GpsStatus.EXCELLENT -> "測位良好 (道路吸着)"
+                    GpsStatus.EXCELLENT -> "GPS測位良好 (常時)"
                     GpsStatus.RAW_ONLY -> "GPS実測値トレース"
-                    GpsStatus.EXTRAPOLATING_TUNNEL -> "自律補完（GPS遮断）"
+                    GpsStatus.EXTRAPOLATING_TUNNEL -> "自律航空補完（GPS遮断）"
                     GpsStatus.PAUSED -> "一時停止中"
                     GpsStatus.STOPPED -> "レコーダー待機"
                 }
@@ -359,8 +314,8 @@ fun ScenicMapView(
             }
         }
 
-        // マップ上の補助インジケータ（オートセンター無効時に再オンにするボタン等）
-        if (dragOffset != Offset.Zero && !autoCenter) {
+        // Map auxiliary recentering trigger floating action button
+        if (!autoCenter) {
             Card(
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -375,13 +330,13 @@ fun ScenicMapView(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "現在地からずれています",
+                        text = "地図非固定（スクロール中）",
                         color = Color(0xFF64748B),
                         fontSize = 11.sp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "中心に戻す",
+                        text = "現在地に戻す",
                         color = Color(0xFF1A73E8),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
