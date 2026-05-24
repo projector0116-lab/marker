@@ -114,32 +114,38 @@ fun ScenicMapView(
     }
 
     // Load available landmarks dynamically depending on road context
-    val landmarks = remember(selectedRoad) {
-        when (selectedRoad.id) {
-            "coast_kamakura" -> listOf(
+    val landmarks = remember(selectedRoad, currentLocation) {
+        val centerLat = currentLocation.latitude
+        val centerLng = currentLocation.longitude
+        val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
+        val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
+
+        when {
+            selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan) -> listOf(
                 MapLandmark("江の島 (Enoshima Island)", 35.300, 139.510, "観光名所 / 展望灯台", Color(0xFF0F766E), isOcean = true),
                 MapLandmark("鎌倉大仏 (Great Buddha)", 35.3168, 139.5361, "高徳院 / 国宝大仏", Color(0xFF1E3A8A), isShrine = true),
                 MapLandmark("長谷寺 (Hase-dera)", 35.3125, 139.5332, "長谷観音 / 鎌倉観音霊場", Color(0xFF334155), isShrine = true),
                 MapLandmark("由比ヶ浜 (Yuigahama)", 35.3110, 139.5500, "海岸 / ビーチスポット", Color(0xFFEA580C)),
                 MapLandmark("七里ヶ浜 (Shichirigahama)", 35.3055, 139.5180, "湘南絶景シーサイド", Color(0xFF0284C7), isOcean = true)
             )
-            "hakone_pass" -> listOf(
+            selectedRoad.id == "hakone_pass" || (selectedRoad.id == "real_gps_free" && isNearHakone) -> listOf(
                 MapLandmark("芦ノ湖 (Lake Ashi)", 35.2010, 139.0150, "火山湖 / 観光海賊船", Color(0xFF0077B6), isOcean = true),
                 MapLandmark("箱根神社 (Hakone Shrine)", 35.2040, 139.0260, "朱色の平和の鳥居", Color(0xFFDC2626), isShrine = true),
                 MapLandmark("箱根関所 (Checkpoint)", 35.1910, 139.0260, "江戸時代 歴史関所跡", Color(0xFF1E293B)),
                 MapLandmark("元箱根港 (Motohakone)", 35.1990, 139.0320, "海賊船・遊覧船乗船口", Color(0xFF0369A1)),
                 MapLandmark("神山 (Mt. Kamiyama)", 35.2180, 139.0430, "標高1,438m / 箱根最高峰", Color(0xFF14532D), isMountain = true)
             )
-            "expressway_tunnels" -> listOf(
+            selectedRoad.id == "expressway_tunnels" -> listOf(
                 MapLandmark("相模川 (Sagami River)", 35.3550, 139.3920, "一級河川 / 湘南大橋", Color(0xFF0369A1), isOcean = true),
                 MapLandmark("辻堂海浜公園 (Tsujido Park)", 35.3210, 139.4510, "広大な芝生とプール", Color(0xFF16A34A)),
                 MapLandmark("藤沢駅周辺 (Fujisawa Town)", 35.3380, 139.4870, "湘南エリア交通の端", Color(0xFF334155)),
                 MapLandmark("茅ヶ崎JCT", 35.3520, 139.4100, "湘南バイパスジャンクション", Color(0xFF475569))
             )
             else -> listOf(
-                MapLandmark("江の島 (Enoshima)", 35.3000, 139.5100, "湘南シンボル観光地", Color(0xFF0F766E), isOcean = true),
-                MapLandmark("鎌倉大仏 (Great Buddha)", 35.3168, 139.5361, "鎌倉の仏教寺院", Color(0xFF1E3A8A), isShrine = true),
-                MapLandmark("由比ヶ浜海浜公園", 35.3110, 139.5500, "湘南の美しい海風", Color(0xFFEA580C))
+                MapLandmark("📍 現在地ロック (Local GPS Lock)", centerLat, centerLng, "測位衛星信号捕捉アンカー", Color(0xFF1D4ED8)),
+                MapLandmark("🌳 まちのセントラルパーク", centerLat + 0.0045, centerLng - 0.0040, "市民憩いの緑地・地域避難場所", Color(0xFF16A34A), isMountain = false),
+                MapLandmark("⛩️ 平和記念神社", centerLat - 0.0035, centerLng + 0.0050, "地域守護・歴史文化スポット", Color(0xFFDC2626), isShrine = true),
+                MapLandmark("☕ リバーサイドテラスモール", centerLat, centerLng + 0.0030, "お買い物とグルメの複合スポット", Color(0xFFEA580C))
             )
         }
     }
@@ -200,10 +206,21 @@ fun ScenicMapView(
             val viewCenterLat = centerLat - animDragOffset.value.y / zoom
             val viewCenterLng = centerLng + animDragOffset.value.x / (zoom * cosLat)
 
+            // Check if coordinates lie near Shonan or Hakone regions so we draw local offline geometry gracefully
+            val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
+            val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
+
+            val drawShonanFeatures = selectedRoad.id == "coast_kamakura" ||
+                    selectedRoad.id == "expressway_tunnels" ||
+                    (selectedRoad.id == "real_gps_free" && isNearShonan)
+
+            val drawHakoneFeatures = selectedRoad.id == "hakone_pass" ||
+                    (selectedRoad.id == "real_gps_free" && isNearHakone)
+
             // ==========================================
             // LAYER 1: WATER BODIES & LAND BACKGROUNDS
             // ==========================================
-            if (selectedRoad.id == "coast_kamakura" || selectedRoad.id == "expressway_tunnels" || selectedRoad.id == "real_gps_free") {
+            if (drawShonanFeatures) {
                 // Pacific Ocean (Sagami Bay - 相模湾) fills everything south of latitude 35.305
                 val pCoastL = project(35.305, minLng)
                 val pCoastR = project(35.305, maxLng)
@@ -237,7 +254,7 @@ fun ScenicMapView(
                     radius = 50.dp.toPx(),
                     center = parkCenter
                 )
-            } else if (selectedRoad.id == "hakone_pass") {
+            } else if (drawHakoneFeatures) {
                 // Hakone Mountain forested green surroundings (Ashigarashimo District)
                 drawRect(
                     color = Color(0xFFE2EAD8), // Forest/mountain green land base
@@ -262,10 +279,28 @@ fun ScenicMapView(
                     size = Size(lakeW * 2f, lakeH * 2f),
                     style = Stroke(width = 3.dp.toPx())
                 )
+            } else {
+                // Procedural beautiful River passing near current coordinate center (e.g. Kyoto Kamogawa or local river) to make map rich!
+                val proceduralRiverPath = Path().apply {
+                    val pStart = project(centerLat + 0.012, centerLng - 0.008)
+                    val pMid = project(centerLat, centerLng + 0.002)
+                    val pEnd = project(centerLat - 0.012, centerLng + 0.010)
+                    moveTo(pStart.x, pStart.y)
+                    quadraticTo(pMid.x, pMid.y, pEnd.x, pEnd.y)
+                }
+                drawPath(
+                    path = proceduralRiverPath,
+                    color = Color(0xFFA5DCF8).copy(alpha = 0.80f),
+                    style = Stroke(
+                        width = 16.dp.toPx(),
+                        cap = StrokeCap.Round,
+                        join = StrokeJoin.Round
+                    )
+                )
             }
 
             // Draw winding Sagami River (相模川)
-            if (selectedRoad.id == "expressway_tunnels" || selectedRoad.id == "real_gps_free") {
+            if (selectedRoad.id == "expressway_tunnels" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
                 val riverPath = Path().apply {
                     val pStart = project(35.3900, 139.3900)
                     val pMid = project(35.3550, 139.3930)
@@ -302,7 +337,7 @@ fun ScenicMapView(
                 val pL = project(curStLat, minLng)
                 val pR = project(curStLat, maxLng)
                 // Filter: skip drawing horizontal streets deep inside the Pacific Ocean (below coast)
-                if (selectedRoad.id != "coast_kamakura" || curStLat > 35.3060) {
+                if (!drawShonanFeatures || curStLat > 35.3060) {
                     drawLine(
                         color = Color.White.copy(alpha = 0.65f),
                         start = pL,
@@ -319,7 +354,7 @@ fun ScenicMapView(
                 val pT = project(maxLat, curStLng)
                 val pB = project(minLat, curStLng)
                 // Skip if entirely in Southern Ocean
-                if (selectedRoad.id != "coast_kamakura" || minLat > 35.3060 || maxLat > 35.3060) {
+                if (!drawShonanFeatures || minLat > 35.3060 || maxLat > 35.3060) {
                     drawLine(
                         color = Color.White.copy(alpha = 0.65f),
                         start = pT,
@@ -334,7 +369,7 @@ fun ScenicMapView(
             // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
             // ==========================================
             // Beautiful classic railroad markings for Shonan/Kamakura areas
-            if (selectedRoad.id == "coast_kamakura" || selectedRoad.id == "real_gps_free") {
+            if (selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
                 val railPath = Path().apply {
                     val pEno = project(35.3090, 139.4880) // Enoshima Station
                     val pGok = project(35.3070, 139.5280) // Gokurakuji curve
