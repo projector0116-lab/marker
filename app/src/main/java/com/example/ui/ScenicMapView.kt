@@ -455,16 +455,7 @@ fun ScenicMapView(
             val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
 
             // Determine Map Bearing for rotation
-            val currentBearingDegees = if (recordedPath.size >= 2) {
-                val pLast = recordedPath.last()
-                val pPrev = recordedPath[recordedPath.size - 2]
-                val dLat = pLast.latitude - pPrev.latitude
-                val dLng = (pLast.longitude - pPrev.longitude) * cosLatVal
-                val rad = Math.atan2(dLng, dLat)
-                Math.toDegrees(rad).toFloat()
-            } else {
-                0f
-            }
+            val currentBearingDegees = 0f
 
             rotate(degrees = -currentBearingDegees, pivot = Offset(drawWidth / 2f, drawHeight / 2f)) {
                 // ==========================================
@@ -964,7 +955,7 @@ fun ScenicMapView(
             // ==========================================
             // LAYER 10: COMPASS ROSE HUD (Bottom-Left Side)
             // ==========================================
-            val compassCenter = Offset(80.dp.toPx(), height - 125.dp.toPx())
+            val compassCenter = Offset(80.dp.toPx(), height - 200.dp.toPx())
             val compassRad = 32.dp.toPx()
             
             // Outer Dial Circle
