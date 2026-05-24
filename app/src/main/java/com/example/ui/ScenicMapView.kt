@@ -311,7 +311,6 @@ fun ScenicMapView(
                 MapLandmark("茅ヶ崎JCT", 35.3520, 139.4100, "湘南バイパスジャンクション", Color(0xFF475569))
             )
             else -> listOf(
-                MapLandmark("📍 現在地ロック (Local GPS Lock)", centerLat, centerLng, "測位衛星信号捕捉アンカー", Color(0xFF1D4ED8)),
                 MapLandmark("🌳 まちのセントラルパーク", centerLat + 0.0045, centerLng - 0.0040, "市民憩いの緑地・地域避難場所", Color(0xFF16A34A), isMountain = false),
                 MapLandmark("⛩️ 平和記念神社", centerLat - 0.0035, centerLng + 0.0050, "地域守護・歴史文化スポット", Color(0xFFDC2626), isShrine = true),
                 MapLandmark("🏔️ みはらしの丘 (Scenic Hill)", centerLat + 0.0020, centerLng + 0.0035, "美しい景色が広がる見事な丘", Color(0xFF15803D), isMountain = true)
@@ -699,38 +698,6 @@ fun ScenicMapView(
                                 }
                             }
                         }
-                    }
-                }
-            }
-
-            // ==========================================
-            // LAYER 6: ROUTE LABELS (START & GOAL PINPOINTS)
-            // ==========================================
-            if (selectedRoad.nodes.isNotEmpty()) {
-                val nodesPoint = selectedRoad.nodes
-                val endpoints = listOf(
-                    0 to "起点 (START)",
-                    (nodesPoint.size - 1) to "終点 (GOAL)"
-                )
-                endpoints.forEach { (index, text) ->
-                    val pt = project(nodesPoint[index].latitude, nodesPoint[index].longitude)
-                    drawCircle(
-                        color = if (index == 0) Color(0xFF10B981) else Color(0xFFEF4444),
-                        radius = 8.dp.toPx(),
-                        center = pt
-                    )
-                    drawCircle(
-                        color = Color.White,
-                        radius = 3.5.dp.toPx(),
-                        center = pt
-                    )
-                    drawIntoCanvas { canvas ->
-                        canvas.nativeCanvas.drawText(
-                            text,
-                            pt.x,
-                            pt.y - 15.dp.toPx(),
-                            landmarkLabelPaint
-                        )
                     }
                 }
             }
