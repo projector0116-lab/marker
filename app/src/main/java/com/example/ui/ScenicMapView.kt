@@ -1167,24 +1167,25 @@ fun ScenicMapView(
         // ==========================================
         // COMPASS TOGGLE BUTTON (Google Maps Style)
         // ==========================================
-        // Positioned Top-Right below the coordinate panel
+        // Positioned Top-Right below the zoom/settings column in MainActivity (which ends around 490dp)
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 310.dp, end = 12.dp)
-                .size(44.dp)
+                .padding(top = 505.dp, end = 16.dp)
+                .size(36.dp)
                 .clip(androidx.compose.foundation.shape.CircleShape)
                 .background(Color.White)
                 .border(1.dp, Color(0x3364748B), androidx.compose.foundation.shape.CircleShape)
                 .clickable { isHeadingUp = !isHeadingUp },
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.size(28.dp)) {
+            Canvas(modifier = Modifier.size(22.dp)) {
                 val r = size.minDimension / 2
                 val center = Offset(size.width / 2, size.height / 2)
                 
-                // Compass Bearing (How much we need to rotate the needle to point North)
-                // If map is rotated by -bearing, then North is at +bearing.
+                // Compass Bearing: Point to North
+                // When isHeadingUp is true, map is rotated by -currentBearingDegrees. 
+                // To point North (0 degrees), we rotate the needle by currentBearingDegrees.
                 val needleRotation = currentBearingDegrees
                 
                 rotate(needleRotation) {
@@ -1192,8 +1193,8 @@ fun ScenicMapView(
                     drawPath(
                         path = Path().apply {
                             moveTo(center.x, center.y - r)
-                            lineTo(center.x - 4.dp.toPx(), center.y)
-                            lineTo(center.x + 4.dp.toPx(), center.y)
+                            lineTo(center.x - 3.dp.toPx(), center.y)
+                            lineTo(center.x + 3.dp.toPx(), center.y)
                             close()
                         },
                         color = Color(0xFFEF4444) // North (Red)
@@ -1201,8 +1202,8 @@ fun ScenicMapView(
                     drawPath(
                         path = Path().apply {
                             moveTo(center.x, center.y + r)
-                            lineTo(center.x - 4.dp.toPx(), center.y)
-                            lineTo(center.x + 4.dp.toPx(), center.y)
+                            lineTo(center.x - 3.dp.toPx(), center.y)
+                            lineTo(center.x + 3.dp.toPx(), center.y)
                             close()
                         },
                         color = Color(0xFF94A3B8) // South (Grey)
@@ -1210,16 +1211,16 @@ fun ScenicMapView(
                 }
                 
                 // Center dot
-                drawCircle(color = Color(0xFF1E293B), radius = 2.dp.toPx(), center = center)
+                drawCircle(color = Color(0xFF1E293B), radius = 1.5.dp.toPx(), center = center)
             }
             
             // Indicator text for Heading-Up mode
             if (isHeadingUp) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 2.dp)
-                        .size(4.dp)
+                        .align(Alignment.TopCenter)
+                        .padding(top = 2.dp)
+                        .size(3.dp)
                         .background(Color(0xFF3B82F6), androidx.compose.foundation.shape.CircleShape)
                 )
             }

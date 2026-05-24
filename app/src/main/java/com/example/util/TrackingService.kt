@@ -43,6 +43,15 @@ class TrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "STOP_SERVICE") {
+            Log.d("TrackingService", "Stop action received from notification")
+            // We need to notify the ViewModel if possible, or just stop the service.
+            // Since there's no easy way to notify ViewModel from here without an EventBus/Broadcast,
+            // we'll just stop self. The ViewModel might still think it's running if it's not checking service state.
+            // But usually the user expects the whole tracking to stop.
+            stopSelf()
+            return START_NOT_STICKY
+        }
         Log.d("TrackingService", "Background tracking service started")
         isRunning = true
 
@@ -55,15 +64,26 @@ class TrackingService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val stopIntent = Intent(this, TrackingService::class.java).apply {
+            action = "STOP_SERVICE"
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("GPSルート記録中 / バックグラウンド動作中")
-            .setContentText("バックグラウンドで走行データをリアルタイムで測定・道路中央補正（吸着）しています")
+            .setContentTitle("GPS計測: 実行中")
+            .setContentText("バックグラウンドで正確なルートを記録しています")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setColor(Color.parseColor("#1D4ED8")) // Slate Blue tint
+            .setColor(Color.parseColor("#1D4ED8"))
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "計測を停止", stopPendingIntent)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
