@@ -115,6 +115,12 @@ object NavigationEngine {
     // Beautiful Preset Routes in Shonan/Kamakura/Hakone regions
     val PRESET_ROADS = listOf(
         MockRoad(
+            id = "real_gps_free",
+            name = "フリー軌跡計測 (リアルGPS自由移動)",
+            nodes = emptyList(),
+            tunnelRanges = emptyList()
+        ),
+        MockRoad(
             id = "coast_kamakura",
             name = "鎌倉134号湘南シーサイドロード (Coastal Route)",
             nodes = interpolatePoints(listOf(

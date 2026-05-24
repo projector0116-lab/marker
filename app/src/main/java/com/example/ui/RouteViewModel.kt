@@ -64,6 +64,13 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     // GPS Snap configuration (Lock to middle of the road)
     val isSnapped = MutableStateFlow(true)
 
+    // Tunnel mode configuration (Auto-detect tunnel segments vs purely manual)
+    val isAutoTunnelEnabled = MutableStateFlow(true)
+
+    fun toggleAutoTunnel() {
+        isAutoTunnelEnabled.value = !isAutoTunnelEnabled.value
+    }
+
     // Current operational state
     private val _gpsStatus = MutableStateFlow(GpsStatus.STOPPED)
     val gpsStatus: StateFlow<GpsStatus> = _gpsStatus.asStateFlow()
@@ -83,6 +90,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     // Live GPS setup
     private var fusedLocationClient: FusedLocationProviderClient? = null
     private var locationCallback: LocationCallback? = null
+    private var lastGpsUpdateTime = 0L
 
     // Sim/Timer job controllers
     private var trackingTimerJob: Job? = null
@@ -110,13 +118,13 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         val road = selectedRoad.value
         if (road.nodes.isNotEmpty()) {
             _currentLocation.value = road.nodes[0]
-            simIndex = 0
-            _currentSpeedKmh.value = 0.0
-            _totalDistanceKm.value = 0.0
-            _averageSpeedKmh.value = 0.0
-            _durationSeconds.value = 0L
-            _recordedPath.value = emptyList()
         }
+        simIndex = 0
+        _currentSpeedKmh.value = 0.0
+        _totalDistanceKm.value = 0.0
+        _averageSpeedKmh.value = 0.0
+        _durationSeconds.value = 0L
+        _recordedPath.value = emptyList()
     }
 
     /**
@@ -272,6 +280,10 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             locationCallback = object : LocationCallback() {
                 override fun onLocationResult(locationResult: LocationResult) {
                     val location = locationResult.lastLocation ?: return
+                    lastGpsUpdateTime = System.currentTimeMillis()
+                    if (_gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL && isAutoTunnelEnabled.value) {
+                        _gpsStatus.value = if (isSnapped.value && selectedRoad.value.nodes.isNotEmpty()) GpsStatus.EXCELLENT else GpsStatus.RAW_ONLY
+                    }
 
                     viewModelScope.launch {
                         processIncomingLocation(location.latitude, location.longitude, location.speed * 3.6)
@@ -303,18 +315,19 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     private fun processIncomingLocation(lat: Double, lng: Double, rawSpeedKmh: Double) {
         if (_gpsStatus.value == GpsStatus.PAUSED || _gpsStatus.value == GpsStatus.STOPPED) return
 
-        // 1. Check if we are in tunnel. If the emulator mock approaches a predetermined tunnel index, we enter EXTRAPOLATING_TUNNEL automatically!
+        // 1. Check if we are in tunnel. If auto tunnel is enabled and we approach a predetermined tunnel index, enter EXTRAPOLATING_TUNNEL!
         val activeRoad = selectedRoad.value
-        val simulatedTunnelDetection = activeRoad.isNodeIndexInTunnel(simIndex)
-
-        if (simulatedTunnelDetection && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
-            // Auto entered tunnel range!
-            lastSpeedKmh = if (rawSpeedKmh > 5.0) rawSpeedKmh else targetSimSpeedKmh
-            _gpsStatus.value = GpsStatus.EXTRAPOLATING_TUNNEL
-            Log.d("RouteViewModel", "Entered tunnel automatically at node index $simIndex! Dead reckoning initiated.")
-        } else if (!simulatedTunnelDetection && _gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL && simulatedTunnelDetection != isSimulationRunning) {
-            // Left tunnel!
-            _gpsStatus.value = if (isSnapped.value) GpsStatus.EXCELLENT else GpsStatus.RAW_ONLY
+        if (isAutoTunnelEnabled.value && activeRoad.nodes.isNotEmpty()) {
+            val simulatedTunnelDetection = activeRoad.isNodeIndexInTunnel(simIndex)
+            if (simulatedTunnelDetection && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
+                // Auto entered tunnel range!
+                lastSpeedKmh = if (rawSpeedKmh > 5.0) rawSpeedKmh else targetSimSpeedKmh
+                _gpsStatus.value = GpsStatus.EXTRAPOLATING_TUNNEL
+                Log.d("RouteViewModel", "Entered tunnel automatically at node index $simIndex! Dead reckoning initiated.")
+            } else if (!simulatedTunnelDetection && _gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL && simulatedTunnelDetection != isSimulationRunning) {
+                // Left tunnel!
+                _gpsStatus.value = if (isSnapped.value) GpsStatus.EXCELLENT else GpsStatus.RAW_ONLY
+            }
         }
 
         // 2. Extrapolation handler or GPS Lock Snap
@@ -330,7 +343,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             val speedToRecord = if (rawSpeedKmh > 1.0) rawSpeedKmh else targetSimSpeedKmh
             _currentSpeedKmh.value = speedToRecord
 
-            if (isSnapped.value) {
+            if (isSnapped.value && activeRoad.nodes.isNotEmpty()) {
                 // Snap coordinate to the MIDDLE OF THE ROAD (orthogonal geometry mapping)
                 val snappedGeo = activeRoad.snapPoint(incomingGeo)
                 _currentLocation.value = snappedGeo
@@ -342,13 +355,11 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                     isInterpolated = false
                 )
             } else {
-                // No snapping: user gets raw erratic coordinate (simulated with a tiny wiggle to mimic GPS jitter)
-                val jitterLat = lat + (Math.random() - 0.5) * 0.00018
-                val jitterLng = lng + (Math.random() - 0.5) * 0.00018
-                _currentLocation.value = GeoPoint(jitterLat, jitterLng)
+                // Real GPS coordinates directly, absolutely no artificial jitter
+                _currentLocation.value = incomingGeo
                 finalPoint = RoutePoint(
-                    latitude = jitterLat,
-                    longitude = jitterLng,
+                    latitude = lat,
+                    longitude = lng,
                     speedKmh = speedToRecord,
                     timestamp = System.currentTimeMillis(),
                     isInterpolated = false
@@ -365,19 +376,27 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
      */
     private fun applyDeadReckoningExtrapolation(): RoutePoint {
         val road = selectedRoad.value
-        val lastPoint = _recordedPath.value.lastOrNull()
         val defaultPosition = _currentLocation.value
 
         // Maintain constant tunnel drift speed
         _currentSpeedKmh.value = lastSpeedKmh
 
-        val nextIndex = (simIndex + 1).coerceAtMost(road.nodes.size - 1)
-        val roadSegmentTarget = road.nodes[nextIndex]
-
-        // Travel along the road nodes to mimic natural cave following
-        val bearingLat = roadSegmentTarget.latitude - defaultPosition.latitude
-        val bearingLng = roadSegmentTarget.longitude - defaultPosition.longitude
-        val angle = Math.atan2(bearingLng, bearingLat)
+        val angle = if (road.nodes.isNotEmpty()) {
+            val nextIndex = (simIndex + 1).coerceAtMost(road.nodes.size - 1)
+            val roadSegmentTarget = road.nodes[nextIndex]
+            val bearingLat = roadSegmentTarget.latitude - defaultPosition.latitude
+            val bearingLng = roadSegmentTarget.longitude - defaultPosition.longitude
+            Math.atan2(bearingLng, bearingLat)
+        } else {
+            val path = _recordedPath.value
+            if (path.size >= 2) {
+                val p1 = path[path.size - 2]
+                val p2 = path.last()
+                Math.atan2(p2.longitude - p1.longitude, p2.latitude - p1.latitude)
+            } else {
+                Math.toRadians(90.0) // Fallback heading East
+            }
+        }
 
         // Calculate travel displacement (60km/h is 16.6m/s. We update every 1s, so delta is ~16.6m)
         // 1 degree latitude is exactly ~111,000 meters. Delta in degrees:
@@ -386,18 +405,17 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         val deltaLat = (deltaMeter * cos(angle)) / 111120.0
         val deltaLng = (deltaMeter * sin(angle)) / (111120.0 * cos(Math.toRadians(defaultPosition.latitude)))
 
-        val newLat = (defaultPosition.latitude + deltaLat).coerceIn(35.0, 36.0)
-        val newLng = (defaultPosition.longitude + deltaLng).coerceIn(138.0, 140.0)
+        val newLat = (defaultPosition.latitude + deltaLat).coerceIn(-90.0, 90.0)
+        val newLng = (defaultPosition.longitude + deltaLng).coerceIn(-180.0, 180.0)
 
         val newGeo = GeoPoint(newLat, newLng)
         _currentLocation.value = newGeo
 
-        // In a tunnel, we guarantee snapping to road center because dead-reckoning uses road vectors!
-        val snappedGeo = road.snapPoint(newGeo)
+        val finalGeo = if (road.nodes.isNotEmpty()) road.snapPoint(newGeo) else newGeo
 
         return RoutePoint(
-            latitude = snappedGeo.latitude,
-            longitude = snappedGeo.longitude,
+            latitude = finalGeo.latitude,
+            longitude = finalGeo.longitude,
             speedKmh = lastSpeedKmh,
             timestamp = System.currentTimeMillis(),
             isInterpolated = true // Flagged orange on the UI!
@@ -469,10 +487,49 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                 if (_gpsStatus.value != GpsStatus.PAUSED) {
                     delay(1000L)
                     _durationSeconds.value += 1
+
+                    // Automatic Tunnel detection logic for real GPS tracking:
+                    // If auto-tunnel is enabled, and we haven't received a callback update for over 4 seconds, we assume tunnel entry / signal loss.
+                    if (isAutoTunnelEnabled.value &&
+                        _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL &&
+                        _gpsStatus.value != GpsStatus.STOPPED &&
+                        _gpsStatus.value != GpsStatus.PAUSED &&
+                        lastGpsUpdateTime > 0L &&
+                        System.currentTimeMillis() - lastGpsUpdateTime > 4000L
+                    ) {
+                        lastSpeedKmh = _currentSpeedKmh.value.coerceAtLeast(15.0)
+                        _gpsStatus.value = GpsStatus.EXTRAPOLATING_TUNNEL
+                        Log.d("RouteViewModel", "No GPS updates for 4 seconds. Automatically entering tunnel/dead-reckoning mode!")
+                    }
+
+                    // If in extrapolating tunnel state, tick the extrapolation step forward on our timer clock
+                    if (_gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL) {
+                        val finalPoint = applyDeadReckoningExtrapolation()
+                        appendPointToActiveTrail(finalPoint)
+                    }
                 } else {
                     delay(500L)
                 }
             }
+        }
+    }
+
+    /**
+     * Obtains the user's current raw GPS position once on application launch or permission grant.
+     */
+    @SuppressLint("MissingPermission")
+    fun fetchCurrentLocationOnce(context: Context) {
+        try {
+            val client = LocationServices.getFusedLocationProviderClient(context)
+            client.lastLocation.addOnSuccessListener { location: Location? ->
+                if (location != null) {
+                    val geo = GeoPoint(location.latitude, location.longitude)
+                    _currentLocation.value = geo
+                    Log.d("RouteViewModel", "Fetched startup location: $geo")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("RouteViewModel", "Failed to fetch startup location", e)
         }
     }
 }

@@ -92,11 +92,12 @@ fun RouteTrackerApp(
     val gpsStatus by viewModel.gpsStatus.collectAsState()
     val selectedRoad by viewModel.selectedRoad.collectAsState()
     val isSnapped by viewModel.isSnapped.collectAsState()
+    val isAutoTunnelEnabled by viewModel.isAutoTunnelEnabled.collectAsState()
     val savedRoutes by viewModel.savedRoutesHistory.collectAsState()
     val overlayRoute by viewModel.overlayRoute.collectAsState()
 
     // Local configuration controllers
-    var isLiveGpsSelected by remember { mutableStateOf(false) }
+    var isLiveGpsSelected by remember { mutableStateOf(true) }
     var zoomScale by remember { mutableStateOf(240000f) }
     var autoCenterMap by remember { mutableStateOf(true) }
     var selectRoadDropdownExpanded by remember { mutableStateOf(false) }
@@ -104,46 +105,66 @@ fun RouteTrackerApp(
     var showSaveDialog by remember { mutableStateOf(false) }
     var customSaveName by remember { mutableStateOf("") }
 
+    var hasGpsPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
     // Live GPS runtime permission launcher
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
         val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        hasGpsPermission = fineGranted || coarseGranted
         if (fineGranted || coarseGranted) {
             Toast.makeText(context, "GPS 測位を開始しました", Toast.LENGTH_SHORT).show()
+            viewModel.fetchCurrentLocationOnce(context)
             viewModel.startTracking(context, useLiveGps = true)
         } else {
-            isLiveGpsSelected = false
-            Toast.makeText(context, "GPS権限が拒否されました。シミュレーション走行を開始します。", Toast.LENGTH_LONG).show()
-            viewModel.startTracking(context, useLiveGps = false)
+            Toast.makeText(context, "リアルGPS軌跡を記録するには、位置情報の許可が必要です。", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Auto-align location on launch
+    LaunchedEffect(Unit) {
+        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        hasGpsPermission = hasFine || hasCoarse
+        if (hasFine || hasCoarse) {
+            viewModel.fetchCurrentLocationOnce(context)
+        } else {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
         }
     }
 
     // Function to initiate tracking
     val initiateTracking: () -> Unit = {
-        if (isLiveGpsSelected) {
-            val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-            if (hasFine || hasCoarse) {
-                viewModel.startTracking(context, useLiveGps = true)
-            } else {
-                locationPermissionLauncher.launch(
-                    arrayOf(
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    )
-                )
-            }
+        val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (hasFine || hasCoarse) {
+            viewModel.startTracking(context, useLiveGps = true)
         } else {
-            viewModel.startTracking(context, useLiveGps = false)
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
         }
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A))
+            .background(Color(0xFFF4F3F0))
     ) {
         // --------------------------------------------------------------------
         // Component 1: Scenic Vector Panning Canvas Map (fills full screen)
@@ -176,10 +197,10 @@ fun RouteTrackerApp(
                 // Route Selection Dropdown Trigger Card
                 Card(
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xF01E293B)),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
                     modifier = Modifier
                         .weight(1f)
-                        .border(1.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
                         .testTag("route_selector")
                 ) {
                     Box(
@@ -192,23 +213,23 @@ fun RouteTrackerApp(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.Map, contentDescription = "Map Select", tint = Color(0xFF00E5FF))
+                            Icon(Icons.Default.Map, contentDescription = "Map Select", tint = Color(0xFF1A73E8))
                             Column {
                                 Text(
                                     text = "選択中のマップ",
                                     fontSize = 10.sp,
-                                    color = Color(0xFF94A3B8)
+                                    color = Color(0xFF64748B)
                                 )
                                 Text(
                                     text = selectedRoad.name.substringBefore(" ("),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White,
+                                    color = Color(0xFF0F172A),
                                     maxLines = 1
                                 )
                             }
                             Spacer(modifier = Modifier.weight(1f))
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", tint = Color.White)
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", tint = Color(0xFF0F172A))
                         }
 
                         // Preset Roads Dropdown Menu
@@ -216,15 +237,15 @@ fun RouteTrackerApp(
                             expanded = selectRoadDropdownExpanded,
                             onDismissRequest = { selectRoadDropdownExpanded = false },
                             modifier = Modifier
-                                .background(Color(0xFF1E293B))
-                                .border(1.dp, Color(0xFF334155), RoundedCornerShape(4.dp))
+                                .background(Color.White)
+                                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
                         ) {
                             viewModel.availableRoads.forEach { road ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(
                                             text = road.name,
-                                            color = if (road.id == selectedRoad.id) Color(0xFF00E5FF) else Color.White,
+                                            color = if (road.id == selectedRoad.id) Color(0xFF1A73E8) else Color(0xFF0F172A),
                                             fontWeight = if (road.id == selectedRoad.id) FontWeight.Bold else FontWeight.Normal
                                         )
                                     },
@@ -245,23 +266,23 @@ fun RouteTrackerApp(
                 Button(
                     onClick = { showHistorySheet = true },
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xF00F172A)),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFAFFFFFF)),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                     modifier = Modifier
                         .height(52.dp)
-                        .border(1.dp, Color(0xFF334155), RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
                         .testTag("history_button")
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Outlined.History, contentDescription = "History", tint = Color(0xFF00E676))
+                        Icon(Icons.Outlined.History, contentDescription = "History", tint = Color(0xFF10B981))
                         Text(
                             text = "履歴 (${savedRoutes.size})",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color(0xFF0F172A)
                         )
                     }
                 }
@@ -276,18 +297,18 @@ fun RouteTrackerApp(
             ) {
                 // Main Tracker Status Indicator
                 val statusBg = when (gpsStatus) {
-                    GpsStatus.EXCELLENT -> Color(0xFF14532D) // Deep Green
-                    GpsStatus.RAW_ONLY -> Color(0xFF1E3A8A)  // Deep Blue
-                    GpsStatus.EXTRAPOLATING_TUNNEL -> Color(0xFF7C2D12) // Glowing orange warning tint
-                    GpsStatus.PAUSED -> Color(0xFF334155) // Grey
-                    GpsStatus.STOPPED -> Color(0xFF0F172A)
+                    GpsStatus.EXCELLENT -> Color(0xFFDCFCE7) // Soft Green background
+                    GpsStatus.RAW_ONLY -> Color(0xFFDBEAFE)  // Soft Blue background
+                    GpsStatus.EXTRAPOLATING_TUNNEL -> Color(0xFFFFEDD5) // Soft Orange warning background
+                    GpsStatus.PAUSED -> Color(0xFFF1F5F9) // Soft Grey background
+                    GpsStatus.STOPPED -> Color(0xFFF8FAFC)
                 }
                 val statusBorder = when (gpsStatus) {
-                    GpsStatus.EXCELLENT -> Color(0xFF22C55E)
-                    GpsStatus.RAW_ONLY -> Color(0xFF3B82F6)
-                    GpsStatus.EXTRAPOLATING_TUNNEL -> Color(0xFFEA580C)
-                    GpsStatus.PAUSED -> Color(0xFF64748B)
-                    GpsStatus.STOPPED -> Color(0xFF1E293B)
+                    GpsStatus.EXCELLENT -> Color(0xFF86EFAC)
+                    GpsStatus.RAW_ONLY -> Color(0xFF93C5FD)
+                    GpsStatus.EXTRAPOLATING_TUNNEL -> Color(0xFFFDBA74)
+                    GpsStatus.PAUSED -> Color(0xFFCBD5E1)
+                    GpsStatus.STOPPED -> Color(0xFFE2E8F0)
                 }
                 val statusText = when (gpsStatus) {
                     GpsStatus.EXCELLENT -> "GPS 良好 (道路ロック中)"
@@ -297,10 +318,11 @@ fun RouteTrackerApp(
                     GpsStatus.STOPPED -> "ログ待機中 - ドライブを開始してください"
                 }
                 val statusColor = when (gpsStatus) {
-                    GpsStatus.EXTRAPOLATING_TUNNEL -> Color(0xFFFFB74D)
-                    GpsStatus.EXCELLENT -> Color(0xFF4ADE80)
-                    GpsStatus.RAW_ONLY -> Color(0xFF60A5FA)
-                    else -> Color.White
+                    GpsStatus.EXCELLENT -> Color(0xFF15803D)
+                    GpsStatus.RAW_ONLY -> Color(0xFF1D4ED8)
+                    GpsStatus.EXTRAPOLATING_TUNNEL -> Color(0xFFC2410C)
+                    GpsStatus.PAUSED -> Color(0xFF475569)
+                    GpsStatus.STOPPED -> Color(0xFF64748B)
                 }
 
                 Card(
@@ -355,21 +377,78 @@ fun RouteTrackerApp(
                 if (overlayRoute != null) {
                     Card(
                         shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xE015803D)),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFDCFCE7)),
                         modifier = Modifier
                             .clickable { viewModel.selectOverlayRoute(null) }
-                            .border(1.dp, Color(0xFF4ADE80), RoundedCornerShape(12.dp))
+                            .border(1.dp, Color(0xFF86EFAC), RoundedCornerShape(12.dp))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.Check, contentDescription = "Active", tint = Color.White, modifier = Modifier.size(12.dp))
+                            Icon(Icons.Default.Check, contentDescription = "Active", tint = Color(0xFF15803D), modifier = Modifier.size(12.dp))
                             Text(
                                 text = "履歴表示OFF",
-                                color = Color.White,
+                                color = Color(0xFF15803D),
                                 fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Check & request location permission banner if permission is missing
+            if (!hasGpsPermission) {
+                Spacer(modifier = Modifier.size(8.dp))
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)), // Soft red highlight
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.5.dp, Color(0xFFFCA5A5), RoundedCornerShape(16.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = "Denied", tint = Color(0xFFDC2626))
+                            Text(
+                                text = "位置情報(GPS)の権限がありません",
+                                color = Color(0xFF991B1B),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "リアルタイムな走行軌跡を計測するには、位置情報の利用許可が必要です。「位置情報の利用を許可する」ボタンを押して設定してください。",
+                            color = Color(0xFF7F1D1D),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                        Button(
+                            onClick = {
+                                locationPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(38.dp)
+                        ) {
+                            Text(
+                                text = "位置情報の利用を許可する",
+                                color = Color.White,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -392,9 +471,9 @@ fun RouteTrackerApp(
             // Speedometer HUD Dial Card
             Card(
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xF50B132B)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
                 modifier = Modifier
-                    .border(1.5.dp, Color(0xFF00E5FF).copy(alpha = 0.7f), RoundedCornerShape(24.dp))
+                    .border(1.5.dp, Color(0xFFE2E8F0), RoundedCornerShape(24.dp))
                     .testTag("speedometer")
             ) {
                 Column(
@@ -410,7 +489,7 @@ fun RouteTrackerApp(
                         CircularProgressIndicator(
                             progress = { 1f },
                             modifier = Modifier.fillMaxSize(),
-                            color = Color(0xFF1E293B),
+                            color = Color(0xFFF1F5F9),
                             strokeWidth = 6.dp
                         )
 
@@ -418,8 +497,8 @@ fun RouteTrackerApp(
                         val progressValue = (currentSpeedKmh / 120.0).coerceIn(0.0, 1.0).toFloat()
                         val arcColor = when {
                             currentSpeedKmh > 80f -> Color(0xFFEF4444) // Red for speeds > 80kmh
-                            currentSpeedKmh > 50f -> Color(0xFFF97316) // Orange
-                            else -> Color(0xFF00E5FF) // Glowing cyan
+                            currentSpeedKmh > 50f -> Color(0xFFEA580C) // Orange
+                            else -> Color(0xFF1A73E8) // Google Maps Blue
                         }
 
                         CircularProgressIndicator(
@@ -438,7 +517,7 @@ fun RouteTrackerApp(
                                 text = String.format("%.0f", currentSpeedKmh),
                                 fontSize = 34.sp,
                                 fontWeight = FontWeight.Black,
-                                color = Color.White,
+                                color = Color(0xFF0F172A),
                                 fontFamily = FontFamily.Monospace,
                                 lineHeight = 34.sp
                             )
@@ -447,7 +526,7 @@ fun RouteTrackerApp(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF64748B)
-                            )
+                              )
                         }
                     }
 
@@ -457,7 +536,7 @@ fun RouteTrackerApp(
                         text = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) "補完速度ロック" else "実測スピード",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color(0xFFF97316) else Color(0xFF94A3B8)
+                        color = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color(0xFFEA580C) else Color(0xFF64748B)
                     )
                 }
             }
@@ -469,12 +548,12 @@ fun RouteTrackerApp(
         // --------------------------------------------------------------------
         Card(
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xED0F172A)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 120.dp)
                 .width(200.dp)
-                .border(1.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(20.dp))
                 .testTag("dashboard_hud")
         ) {
             Column(
@@ -485,21 +564,20 @@ fun RouteTrackerApp(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(Icons.Default.Speed, contentDescription = "Distance", tint = Color(0xFFFF9100), modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.Speed, contentDescription = "Distance", tint = Color(0xFFEA580C), modifier = Modifier.size(16.dp))
                     Text(
                         text = "ダッシュボード",
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
-                        color = Color.White
+                        color = Color(0xFF0F172A)
                     )
                 }
 
-                HorizontalDivider(color = Color(0xFF1E293B))
+                HorizontalDivider(color = Color(0xFFE2E8F0))
 
                 // 2.1 走行距離 Distance
-                // Glowing numbers with customized visual layouts
                 Column {
-                    Text(text = "走行距離 (TRIP)", fontSize = 9.sp, color = Color(0xFF94A3B8))
+                    Text(text = "走行距離 (TRIP)", fontSize = 9.sp, color = Color(0xFF64748B))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.Bottom,
@@ -509,17 +587,17 @@ fun RouteTrackerApp(
                             text = String.format("%.2f", totalDistanceKm),
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color(0xFF00FF88),
+                            color = Color(0xFF16A34A),
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 24.sp
                         )
-                        Text(text = "km", fontSize = 11.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold)
+                        Text(text = "km", fontSize = 11.sp, color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
                     }
                 }
 
                 // 2.2 平均速度 Average speed
                 Column {
-                    Text(text = "平均速度 (AVG)", fontSize = 9.sp, color = Color(0xFF94A3B8))
+                    Text(text = "平均速度 (AVG)", fontSize = 9.sp, color = Color(0xFF64748B))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.Bottom,
@@ -529,10 +607,10 @@ fun RouteTrackerApp(
                             text = String.format("%.1f", averageSpeedKmh),
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontFamily = FontFamily.Monospace
                         )
-                        Text(text = "km/h", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                        Text(text = "km/h", fontSize = 10.sp, color = Color(0xFF64748B))
                     }
                 }
 
@@ -540,18 +618,18 @@ fun RouteTrackerApp(
                 val minutes = durationSeconds / 60
                 val seconds = durationSeconds % 60
                 Column {
-                    Text(text = "計測時間 (TIME)", fontSize = 9.sp, color = Color(0xFF94A3B8))
+                    Text(text = "計測時間 (TIME)", fontSize = 9.sp, color = Color(0xFF64748B))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Timer", tint = Color.White, modifier = Modifier.size(11.dp))
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Timer", tint = Color(0xFF64748B), modifier = Modifier.size(11.dp))
                         Text(
                             text = String.format("%02d:%02d", minutes, seconds),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = Color(0xFF0F172A),
                             fontFamily = FontFamily.Monospace,
                         )
                     }
@@ -571,10 +649,12 @@ fun RouteTrackerApp(
             // Recenter Lock anchor
             FloatingActionButton(
                 onClick = { autoCenterMap = !autoCenterMap },
-                containerColor = if (autoCenterMap) Color(0xFF00E5FF) else Color(0xDD1E293B),
-                contentColor = if (autoCenterMap) Color.Black else Color.White,
+                containerColor = if (autoCenterMap) Color(0xFF1A73E8) else Color.White,
+                contentColor = if (autoCenterMap) Color.White else Color(0xFF0F172A),
                 shape = CircleShape,
-                modifier = Modifier.size(46.dp)
+                modifier = Modifier
+                    .size(46.dp)
+                    .border(1.dp, Color(0xFFE2E8F0), CircleShape)
             ) {
                 Icon(
                     imageVector = if (autoCenterMap) Icons.Default.MyLocation else Icons.Default.LocationSearching,
@@ -586,10 +666,12 @@ fun RouteTrackerApp(
             // Zoom In
             FloatingActionButton(
                 onClick = { zoomScale = (zoomScale * 1.25f).coerceAtMost(500000f) },
-                containerColor = Color(0xDD1E293B),
-                contentColor = Color.White,
+                containerColor = Color.White,
+                contentColor = Color(0xFF0F172A),
                 shape = CircleShape,
-                modifier = Modifier.size(42.dp)
+                modifier = Modifier
+                    .size(42.dp)
+                    .border(1.dp, Color(0xFFE2E8F0), CircleShape)
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Zoom In")
             }
@@ -597,15 +679,18 @@ fun RouteTrackerApp(
             // Zoom Out
             FloatingActionButton(
                 onClick = { zoomScale = (zoomScale / 1.25f).coerceAtLeast(80000f) },
-                containerColor = Color(0xDD1E293B),
-                contentColor = Color.White,
+                containerColor = Color.White,
+                contentColor = Color(0xFF0F172A),
                 shape = CircleShape,
-                modifier = Modifier.size(42.dp)
+                modifier = Modifier
+                    .size(42.dp)
+                    .border(1.dp, Color(0xFFE2E8F0), CircleShape)
             ) {
                 Icon(Icons.Default.Remove, contentDescription = "Zoom Out")
             }
         }
 
+        // --------------------------------------------------------------------
         // --------------------------------------------------------------------
         // Component 5: Bottom Cockpit Console Box (Pedal, Snaps, Tunnels)
         // --------------------------------------------------------------------
@@ -614,8 +699,8 @@ fun RouteTrackerApp(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 6.dp)
-                .border(1.dp, Color(0xFF334155), RoundedCornerShape(24.dp)),
-            colors = CardDefaults.cardColors(containerColor = Color(0xF50B0F19)),
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(24.dp)),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
             shape = RoundedCornerShape(24.dp)
         ) {
             Column(
@@ -632,58 +717,22 @@ fun RouteTrackerApp(
                 ) {
                     when (gpsStatus) {
                         GpsStatus.STOPPED -> {
-                            // Tracking configuration mode selector (Live GPS vs Simulated Drive)
-                            Row(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF1E293B))
-                                    .padding(2.dp),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                Button(
-                                    onClick = { isLiveGpsSelected = false },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (!isLiveGpsSelected) Color(0xFF334155) else Color.Transparent
-                                    ),
-                                    contentPadding = PaddingValues(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.Computer, contentDescription = "Sim", modifier = Modifier.size(15.dp), tint = Color.White)
-                                    Spacer(modifier = Modifier.size(4.dp))
-                                    Text("シミュレーション走行", fontSize = 10.sp, color = Color.White)
-                                }
-                                Button(
-                                    onClick = { isLiveGpsSelected = true },
-                                    shape = RoundedCornerShape(10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isLiveGpsSelected) Color(0xFF334155) else Color.Transparent
-                                    ),
-                                    contentPadding = PaddingValues(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Default.GpsFixed, contentDescription = "Sim", modifier = Modifier.size(15.dp), tint = Color.White)
-                                    Spacer(modifier = Modifier.size(4.dp))
-                                    Text("リアルGPS測位", fontSize = 10.sp, color = Color.White)
-                                }
-                            }
-
-                            // Start Recording trigger
+                            // Start Recording trigger in Gorgeous Google Maps Blue
                             Button(
                                 onClick = initiateTracking,
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
                                 modifier = Modifier
-                                    .height(44.dp)
+                                    .fillMaxWidth()
+                                    .height(46.dp)
                                     .testTag("start_recording_button")
                             ) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "Start", tint = Color.Black)
-                                    Text("走行開始", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    Icon(Icons.Default.PlayArrow, contentDescription = "Start", tint = Color.White)
+                                    Text("自動ルート記録開始", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             }
                         }
@@ -695,33 +744,33 @@ fun RouteTrackerApp(
                             Button(
                                 onClick = { viewModel.toggleTunnelSimulation() },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color(0xFFEA580C) else Color(0xDD3E2723)
+                                    containerColor = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color(0xFFEA580C) else Color(0xFFF1F5F9)
                                 ),
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier
-                                    .weight(1f)
+                                    .weight(1.5f)
                                     .height(44.dp)
                                     .border(
                                         1.dp,
-                                        if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color(0xFFF97316) else Color(0x60D7CCC8),
+                                        if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color(0xFFEA580C) else Color(0xFFCBD5E1),
                                         RoundedCornerShape(14.dp)
                                     )
                                     .testTag("tunnel_simulation_toggle")
                             ) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
                                         if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Icons.Default.DirectionsTransit else Icons.Outlined.Terrain,
                                         contentDescription = "Tunnel trigger",
-                                        tint = Color.White,
+                                        tint = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color.White else Color(0xFF0F172A),
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Text(
-                                        text = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) "トンネルを出る" else "トンネルに突入",
+                                        text = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) "トンネルを出る" else "トンネル進入 (GPS切断)",
                                         fontSize = 11.sp,
-                                        color = Color.White,
+                                        color = if (gpsStatus == GpsStatus.EXTRAPOLATING_TUNNEL) Color.White else Color(0xFF0F172A),
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -732,13 +781,13 @@ fun RouteTrackerApp(
                                 onClick = { viewModel.pauseTracking() },
                                 modifier = Modifier
                                     .size(44.dp)
-                                    .background(Color(0xFF1E293B), CircleShape)
-                                    .border(1.dp, Color(0xFF334155), CircleShape)
+                                    .background(Color(0xFFF1F5F9), CircleShape)
+                                    .border(1.dp, Color(0xFFCBD5E1), CircleShape)
                             ) {
                                 Icon(
                                     imageVector = if (gpsStatus == GpsStatus.PAUSED) Icons.Default.PlayArrow else Icons.Default.Pause,
                                     contentDescription = "Pause",
-                                    tint = Color.White
+                                    tint = Color(0xFF0F172A)
                                 )
                             }
 
@@ -766,80 +815,81 @@ fun RouteTrackerApp(
                     }
                 }
 
-                HorizontalDivider(color = Color(0xFF1E293B))
+                HorizontalDivider(color = Color(0xFFE2E8F0))
 
-                // Accessory Cockpit switches: Snapping and Simulator Pedals
+                // Accessory Cockpit switches: Snapping and Tunnel Automatic Detection Mode
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Lock-to-road Snapping Switch
-                    // Fully addresses "道路のまんなかをしっかり線が記録されるようにして"
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
+                            .weight(1f)
                             .clickable { viewModel.toggleSnapping() }
-                            .padding(horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            .padding(end = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Switch(
                             checked = isSnapped,
                             onCheckedChange = { viewModel.toggleSnapping() },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00E5FF),
-                                checkedTrackColor = Color(0xFF0891B2),
-                                uncheckedThumbColor = Color(0xFF94A3B8),
-                                uncheckedTrackColor = Color(0xFF1E293B)
+                                checkedThumbColor = Color(0xFF1A73E8),
+                                checkedTrackColor = Color(0xFFDBEAFE),
+                                uncheckedThumbColor = Color(0xFF64748B),
+                                uncheckedTrackColor = Color(0xFFE2E8F0)
                             ),
                             modifier = Modifier.scale(0.8f).testTag("snapping_switch")
                         )
                         Column {
                             Text(
-                                text = "道路ロック (車道中央)",
+                                text = "道路ロック",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color(0xFF0F172A)
                             )
                             Text(
-                                text = if (isSnapped) "中央線に強制吸着中" else "GPS実計測生プロット",
+                                text = if (isSnapped) "車道中央吸着" else "GPS実測値",
                                 fontSize = 8.sp,
-                                color = if (isSnapped) Color(0xFF4ADE80) else Color(0xFF94A3B8)
+                                color = if (isSnapped) Color(0xFF16A34A) else Color(0xFF64748B)
                             )
                         }
                     }
 
-                    // Accelerator Speed Regulator Pedal for Simulations
-                    if (gpsStatus != GpsStatus.STOPPED) {
-                        var speedSliderValue by remember { mutableStateOf(50f) }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f).padding(start = 12.dp)
-                        ) {
-                            Icon(Icons.Default.DirectionsCar, contentDescription = "Speed Pedal", tint = Color(0xFF64748B), modifier = Modifier.size(16.dp))
-                            Slider(
-                                value = speedSliderValue,
-                                onValueChange = {
-                                    speedSliderValue = it
-                                    viewModel.setTargetSpeed(it.toDouble())
-                                },
-                                valueRange = 10f..115f,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = Color(0xFF00E5FF),
-                                    inactiveTrackColor = Color(0xFF1E293B)
-                                ),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(28.dp)
+                    // Automatic Tunnel Identification Switch
+                    // Fully addresses "とんねるもーどのぼたんおーとにして"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { viewModel.toggleAutoTunnel() }
+                            .padding(start = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Switch(
+                            checked = isAutoTunnelEnabled,
+                            onCheckedChange = { viewModel.toggleAutoTunnel() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF1A73E8),
+                                checkedTrackColor = Color(0xFFDBEAFE),
+                                uncheckedThumbColor = Color(0xFF64748B),
+                                uncheckedTrackColor = Color(0xFFE2E8F0)
+                            ),
+                            modifier = Modifier.scale(0.8f).testTag("autotunnel_switch")
+                        )
+                        Column {
+                            Text(
+                                text = "トンネル判定",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
                             )
                             Text(
-                                text = "${speedSliderValue.toInt()} km/h",
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                text = if (isAutoTunnelEnabled) "オート（自動検知）" else "マニュアル（手動）",
+                                fontSize = 8.sp,
+                                color = if (isAutoTunnelEnabled) Color(0xFF1A73E8) else Color(0xFF64748B)
                             )
                         }
                     }
@@ -853,8 +903,8 @@ fun RouteTrackerApp(
         if (showHistorySheet) {
             ModalBottomSheet(
                 onDismissRequest = { showHistorySheet = false },
-                containerColor = Color(0xFF0F172A),
-                scrimColor = Color.Black.copy(alpha = 0.6f),
+                containerColor = Color.White,
+                scrimColor = Color.Black.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
             ) {
                 Column(
@@ -870,17 +920,17 @@ fun RouteTrackerApp(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "📜 自動保存済みの通過ルート一覧",
+                            text = "📜 保存済みの通過ルート一覧",
                             fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color(0xFF0F172A)
                         )
                         IconButton(onClick = { showHistorySheet = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF0F172A))
                         }
                     }
 
-                    HorizontalDivider(color = Color(0xFF1E293B))
+                    HorizontalDivider(color = Color(0xFFE2E8F0))
 
                     if (savedRoutes.isEmpty()) {
                         Box(
@@ -893,14 +943,14 @@ fun RouteTrackerApp(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(Icons.Outlined.History, contentDescription = "None", tint = Color(0xFF64748B), modifier = Modifier.size(48.dp))
+                                Icon(Icons.Outlined.History, contentDescription = "None", tint = Color(0xFF94A3B8), modifier = Modifier.size(48.dp))
                                 Text(
                                     text = "保存されたルートはまだありません",
-                                    color = Color(0xFF94A3B8),
+                                    color = Color(0xFF475569),
                                     fontSize = 13.sp
                                 )
                                 Text(
-                                    text = "走行を開始して、終了するとルートが保存されます",
+                                    text = "測定を開始して、終了するとルートが自動保存されます",
                                     color = Color(0xFF64748B),
                                     fontSize = 11.sp
                                 )
@@ -916,10 +966,10 @@ fun RouteTrackerApp(
                             items(savedRoutes, key = { it.id }) { route ->
                                 Card(
                                     shape = RoundedCornerShape(14.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .border(1.dp, Color(0xFF334155), RoundedCornerShape(14.dp))
+                                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(14.dp))
                                 ) {
                                     Column(
                                         modifier = Modifier.padding(12.dp),
@@ -935,13 +985,13 @@ fun RouteTrackerApp(
                                                     text = route.name,
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 14.sp,
-                                                    color = Color.White
+                                                    color = Color(0xFF0F172A)
                                                 )
                                                 val sdf = remember { SimpleDateFormat("MM月dd日 HH:mm", Locale.getDefault()) }
                                                 Text(
                                                     text = sdf.format(Date(route.timestamp)),
                                                     fontSize = 11.sp,
-                                                    color = Color(0xFF94A3B8)
+                                                    color = Color(0xFF64748B)
                                                 )
                                             }
 
@@ -967,18 +1017,18 @@ fun RouteTrackerApp(
                                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
                                                 Column {
-                                                    Text("距離", fontSize = 10.sp, color = Color(0xFF94A3B8))
-                                                    Text(String.format("%.2f km", route.distanceKm), color = Color(0xFF00FF88), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                    Text("距離", fontSize = 10.sp, color = Color(0xFF64748B))
+                                                    Text(String.format("%.2f km", route.distanceKm), color = Color(0xFF16A34A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                                 }
                                                 Column {
-                                                    Text("平均速度", fontSize = 10.sp, color = Color(0xFF94A3B8))
-                                                    Text(String.format("%.1f km/h", route.averageSpeedKmh), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                    Text("平均速度", fontSize = 10.sp, color = Color(0xFF64748B))
+                                                    Text(String.format("%.1f km/h", route.averageSpeedKmh), color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                                 }
                                                 Column {
-                                                    Text("時間", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                                                    Text("時間", fontSize = 10.sp, color = Color(0xFF64748B))
                                                     val m = route.durationSec / 60
                                                     val s = route.durationSec % 60
-                                                    Text(String.format("%d分%02d秒", m, s), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                    Text(String.format("%d分%02d秒", m, s), color = Color(0xFF0F172A), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
 
@@ -991,7 +1041,7 @@ fun RouteTrackerApp(
                                                 },
                                                 shape = RoundedCornerShape(10.dp),
                                                 colors = ButtonDefaults.buttonColors(
-                                                    containerColor = if (overlayRoute?.id == route.id) Color(0xFF10B981) else Color(0xFF0284C7)
+                                                    containerColor = if (overlayRoute?.id == route.id) Color(0xFF10B981) else Color(0xFF1A73E8)
                                                 ),
                                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                                                 modifier = Modifier.height(32.dp)
@@ -1017,26 +1067,26 @@ fun RouteTrackerApp(
         if (showSaveDialog) {
             AlertDialog(
                 onDismissRequest = { showSaveDialog = false },
-                title = { Text("ドライブの保存", color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text("軌跡記録の保存", color = Color(0xFF0F172A), fontWeight = FontWeight.Bold) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "今回のドライブ記録を保存します。ルート名を入力してください (空白の場合は自動命名されます)。",
-                            color = Color(0xFFE2E8F0),
+                            text = "今回の軌跡レコードを保存します。ルート名を入力してください (空白の場合は自動命名されます)。",
+                            color = Color(0xFF475569),
                             fontSize = 13.sp
                         )
                         OutlinedTextField(
                             value = customSaveName,
                             onValueChange = { customSaveName = it },
                             label = { Text("ルート名称") },
-                            placeholder = { Text("鎌倉海岸ドライブ、箱根峠攻めなど") },
+                            placeholder = { Text("いつもの散歩、通勤ドライブなど") },
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedLabelColor = Color(0xFF00E5FF),
-                                focusedBorderColor = Color(0xFF00E5FF),
-                                focusedContainerColor = Color(0xFF1E293B),
-                                unfocusedContainerColor = Color(0xFF1E293B)
+                                focusedTextColor = Color(0xFF0F172A),
+                                unfocusedTextColor = Color(0xFF0F172A),
+                                focusedLabelColor = Color(0xFF1A73E8),
+                                focusedBorderColor = Color(0xFF1A73E8),
+                                focusedContainerColor = Color(0xFFF1F5F9),
+                                unfocusedContainerColor = Color(0xFFF8FAFC)
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth().testTag("route_save_input")
@@ -1051,11 +1101,11 @@ fun RouteTrackerApp(
                             showSaveDialog = false
                             Toast.makeText(context, "ルートを保存しました", Toast.LENGTH_SHORT).show()
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF)),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.testTag("confirm_save_button")
                     ) {
-                        Text("保存", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("保存", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
@@ -1068,9 +1118,9 @@ fun RouteTrackerApp(
                         Text("保存せず終了", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
                     }
                 },
-                containerColor = Color(0xFF0F172A),
+                containerColor = Color.White,
                 shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.border(1.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
+                modifier = Modifier.border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(20.dp))
             )
         }
     }
