@@ -102,6 +102,7 @@ fun RouteTrackerApp(
     var showHistorySheet by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var customSaveName by remember { mutableStateOf("") }
+    var showRoadSelectorDialog by remember { mutableStateOf(false) }
 
     var hasGpsPermission by remember {
         mutableStateOf(
@@ -143,7 +144,7 @@ fun RouteTrackerApp(
         }
     }
 
-    // Function to initiate tracking (always uses real GPS - no simulation!)
+    // Function to initiate tracking (always uses real GPS)
     val initiateTracking: () -> Unit = {
         val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -157,6 +158,12 @@ fun RouteTrackerApp(
                 )
             )
         }
+    }
+
+    // Function to initiate offline scenic simulation (moves marker automatically)
+    val initiateSimulation: () -> Unit = {
+        viewModel.startTracking(context, useLiveGps = false)
+        Toast.makeText(context, "シミュレーション走行を開始しました🚙", Toast.LENGTH_SHORT).show()
     }
 
     Box(
@@ -200,6 +207,7 @@ fun RouteTrackerApp(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
                     modifier = Modifier
                         .weight(1f)
+                        .clickable { showRoadSelectorDialog = true }
                         .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
                         .testTag("route_selector")
                 ) {
@@ -209,20 +217,21 @@ fun RouteTrackerApp(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.MyLocation,
+                            imageVector = Icons.Default.DirectionsCar,
                             contentDescription = "GPS Tracker",
-                            tint = Color(0xFF1A73E8)
+                            tint = Color(0xFF1D4ED8)
                         )
                         Column {
                             Text(
-                                text = "軌跡計測モード",
-                                fontSize = 10.sp,
-                                color = Color(0xFF64748B)
+                                text = "タップでコース変更 ▾",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1D4ED8)
                             )
                             Text(
-                                text = "リアルGPS軌跡レコーダー",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
+                                text = selectedRoad.name.substringBefore(" ("),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Black,
                                 color = Color(0xFF0F172A),
                                 maxLines = 1
                             )
@@ -687,22 +696,52 @@ fun RouteTrackerApp(
                 ) {
                     when (gpsStatus) {
                         GpsStatus.STOPPED -> {
-                            // Start Recording trigger in Gorgeous Google Maps Blue
-                            Button(
-                                onClick = initiateTracking,
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(46.dp)
-                                    .testTag("start_recording_button")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                // 1. Simulation Drive Trigger
+                                Button(
+                                    onClick = initiateSimulation,
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                    modifier = Modifier
+                                        .weight(1.2f)
+                                        .height(48.dp)
+                                        .testTag("start_simulation_button")
                                 ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "Start", tint = Color.White)
-                                    Text("自動ルート記録開始", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.DirectionsCar, contentDescription = "Simulate", tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Column(horizontalAlignment = Alignment.Start) {
+                                            Text("シミュレーション走行", color = Color.White, fontWeight = FontWeight.Black, fontSize = 11.sp, maxLines = 1)
+                                            Text("自動で位置が動きます", color = Color.White.copy(alpha = 0.9f), fontSize = 8.sp, maxLines = 1)
+                                        }
+                                    }
+                                }
+
+                                // 2. Real GPS Hardware Tracker Trigger
+                                Button(
+                                    onClick = initiateTracking,
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A73E8)),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(48.dp)
+                                        .testTag("start_recording_button")
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.MyLocation, contentDescription = "GPS", tint = Color.White, modifier = Modifier.size(14.dp))
+                                        Column(horizontalAlignment = Alignment.Start) {
+                                            Text("リアルGPS計測", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp, maxLines = 1)
+                                            Text("端末のセンサー使用", color = Color.White.copy(alpha = 0.9f), fontSize = 8.sp, maxLines = 1)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1086,6 +1125,121 @@ fun RouteTrackerApp(
                         }
                     ) {
                         Text("保存せず終了", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                    }
+                },
+                containerColor = Color.White,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(20.dp))
+            )
+        }
+
+        // --------------------------------------------------------------------
+        // Scenic Map Course Selector Dialog
+        // --------------------------------------------------------------------
+        if (showRoadSelectorDialog) {
+            AlertDialog(
+                onDismissRequest = { showRoadSelectorDialog = false },
+                title = { Text("🗺️ ドライブコース選択", color = Color(0xFF0F172A), fontWeight = FontWeight.Black) },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "計測またはシミュレーション走行を行うコースを選んでください。コース変更によりマップが自動的にその走行ポイントに再配置されます。",
+                            color = Color(0xFF475569),
+                            fontSize = 12.sp
+                        )
+
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.heightIn(max = 280.dp)
+                        ) {
+                            items(viewModel.availableRoads) { road ->
+                                val isSelected = selectedRoad.id == road.id
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) Color(0xFFEFF6FF) else Color(0xFFF8FAFC)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.selectRoad(road)
+                                            showRoadSelectorDialog = false
+                                            Toast.makeText(context, "${road.name.substringBefore(" (")} コースに切り替えました", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .border(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = if (isSelected) Color(0xFF1D4ED8) else Color(0xFFE2E8F0),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        val iconEmoji = when {
+                                            road.id.contains("coast") -> "🌊"
+                                            road.id.contains("hakone") -> "🗻"
+                                            road.id.contains("tunnel") -> "🚇"
+                                            else -> "🚗"
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .background(if (isSelected) Color(0xFFDBEAFE) else Color(0xFFE2E8F0), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(iconEmoji, fontSize = 18.sp)
+                                        }
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = road.name,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = if (isSelected) Color(0xFF1D4ED8) else Color(0xFF0F172A)
+                                            )
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "${road.nodes.size}地点",
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFF64748B)
+                                                )
+                                                if (road.tunnelRanges.isNotEmpty()) {
+                                                    Text(
+                                                        text = "トンネル: ${road.tunnelRanges.size}箇所",
+                                                        fontSize = 10.sp,
+                                                        color = Color(0xFFEA580C),
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = "Selected",
+                                                tint = Color(0xFF1D4ED8),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showRoadSelectorDialog = false }) {
+                        Text("閉じる", color = Color(0xFF64748B), fontWeight = FontWeight.Bold)
                     }
                 },
                 containerColor = Color.White,
