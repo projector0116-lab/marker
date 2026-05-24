@@ -3,6 +3,7 @@ package com.example.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,7 +41,9 @@ fun ScenicMapView(
     overlayRoutePoints: List<com.example.data.RoutePoint>?,
     modifier: Modifier = Modifier,
     zoomScale: Float = 240000f,
-    autoCenter: Boolean = true
+    autoCenter: Boolean = true,
+    onMapDragged: (() -> Unit)? = null,
+    onReCenter: (() -> Unit)? = null
 ) {
     // マニュアルドラッグオフセット
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
@@ -60,6 +63,7 @@ fun ScenicMapView(
                 detectDragGestures { change, dragAmount ->
                     change.consume()
                     dragOffset += dragAmount
+                    onMapDragged?.invoke()
                 }
             }
     ) {
@@ -293,6 +297,68 @@ fun ScenicMapView(
             }
         }
 
+        // Coordinates Status overlay HUD
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xDDFFFFFF)),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 115.dp, end = 12.dp)
+                .border(1.dp, Color(0x3364748B), RoundedCornerShape(12.dp))
+        ) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(
+                                if (gpsStatus != GpsStatus.STOPPED && gpsStatus != GpsStatus.PAUSED) Color(0xFF10B981) else Color(0xFF94A3B8),
+                                androidx.compose.foundation.shape.CircleShape
+                            )
+                    )
+                    Text(
+                        text = "GPS リアルタイム測位",
+                        color = Color(0xFF1A73E8),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+                Text(
+                    text = String.format("LAT (緯度): %.6f°", currentLocation.latitude),
+                    color = Color(0xFF0F172A),
+                    fontSize = 11.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = String.format("LNG (経度): %.6f°", currentLocation.longitude),
+                    color = Color(0xFF0F172A),
+                    fontSize = 11.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+                val statusLabel = when (gpsStatus) {
+                    GpsStatus.EXCELLENT -> "測位良好 (道路吸着)"
+                    GpsStatus.RAW_ONLY -> "GPS実測値トレース"
+                    GpsStatus.EXTRAPOLATING_TUNNEL -> "自律補完（GPS遮断）"
+                    GpsStatus.PAUSED -> "一時停止中"
+                    GpsStatus.STOPPED -> "レコーダー待機"
+                }
+                Text(
+                    text = "ステータス: $statusLabel",
+                    color = Color(0xFF64748B),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
         // マップ上の補助インジケータ（オートセンター無効時に再オンにするボタン等）
         if (dragOffset != Offset.Zero && !autoCenter) {
             Card(
@@ -302,6 +368,7 @@ fun ScenicMapView(
                     .align(Alignment.BottomEnd)
                     .padding(16.dp)
                     .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(12.dp))
+                    .clickable { onReCenter?.invoke() }
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),

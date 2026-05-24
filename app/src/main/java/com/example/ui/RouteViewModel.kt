@@ -96,7 +96,8 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     private var trackingTimerJob: Job? = null
     private var simulationJob: Job? = null
     private var simIndex = 0
-    private var targetSimSpeedKmh = 50.0 // User controls this slider
+    private var simDistanceMeters = 0.0 // Accumulative driving simulator meters
+    val targetSimSpeedKmh = MutableStateFlow(60.0) // Expose simulation speed flow (default 60 km/h)
     private var isSimulationRunning = false
 
     // Last known telemetry before entering tunnel
@@ -120,6 +121,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             _currentLocation.value = road.nodes[0]
         }
         simIndex = 0
+        simDistanceMeters = 0.0
         _currentSpeedKmh.value = 0.0
         _totalDistanceKm.value = 0.0
         _averageSpeedKmh.value = 0.0
@@ -240,7 +242,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     }
 
     fun setTargetSpeed(kmh: Double) {
-        targetSimSpeedKmh = kmh
+        targetSimSpeedKmh.value = kmh
         if (_gpsStatus.value != GpsStatus.PAUSED && _gpsStatus.value != GpsStatus.STOPPED && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
             _currentSpeedKmh.value = kmh
         }
@@ -256,7 +258,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         if (_gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL) {
             // Emerge from Tunnel!
             _gpsStatus.value = if (isSnapped.value) GpsStatus.EXCELLENT else GpsStatus.RAW_ONLY
-            _currentSpeedKmh.value = targetSimSpeedKmh
+            _currentSpeedKmh.value = targetSimSpeedKmh.value
         } else {
             // Enter Tunnel!
             lastSpeedKmh = _currentSpeedKmh.value.coerceAtLeast(15.0) // Must continue moving
@@ -321,7 +323,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             val simulatedTunnelDetection = activeRoad.isNodeIndexInTunnel(simIndex)
             if (simulatedTunnelDetection && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
                 // Auto entered tunnel range!
-                lastSpeedKmh = if (rawSpeedKmh > 5.0) rawSpeedKmh else targetSimSpeedKmh
+                lastSpeedKmh = if (isSimulationRunning) targetSimSpeedKmh.value else (if (rawSpeedKmh > 5.0) rawSpeedKmh else 30.0)
                 _gpsStatus.value = GpsStatus.EXTRAPOLATING_TUNNEL
                 Log.d("RouteViewModel", "Entered tunnel automatically at node index $simIndex! Dead reckoning initiated.")
             } else if (!simulatedTunnelDetection && _gpsStatus.value == GpsStatus.EXTRAPOLATING_TUNNEL && simulatedTunnelDetection != isSimulationRunning) {
@@ -340,7 +342,11 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             finalPoint = applyDeadReckoningExtrapolation()
         } else {
             // Normal operation
-            val speedToRecord = if (rawSpeedKmh > 1.0) rawSpeedKmh else targetSimSpeedKmh
+            val speedToRecord = if (isSimulationRunning) {
+                targetSimSpeedKmh.value
+            } else {
+                if (rawSpeedKmh >= 0.1) rawSpeedKmh else 0.0
+            }
             _currentSpeedKmh.value = speedToRecord
 
             if (isSnapped.value && activeRoad.nodes.isNotEmpty()) {
@@ -445,37 +451,77 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
 
     /**
      * Driving Simulation Loop. Runs on local clocks to easily test on standard emulators.
-     * Glides smoothly between preset road nodes.
+     * Glides smoothly along road coordinates by tracking distance traveled physically.
      */
     private fun startSimulatedDriving() {
         isSimulationRunning = true
-        _currentSpeedKmh.value = targetSimSpeedKmh
+        _currentSpeedKmh.value = targetSimSpeedKmh.value
+        simDistanceMeters = 0.0
 
         simulationJob = viewModelScope.launch {
             val road = selectedRoad.value
-            if (simIndex >= road.nodes.size - 1) {
-                simIndex = 0 // loop
-            }
+            val roadLength = getRoadTotalLengthMeters(road)
 
             // Simulate point iterations
             while (isSimulationRunning && _gpsStatus.value != GpsStatus.STOPPED) {
                 if (_gpsStatus.value != GpsStatus.PAUSED) {
-                    val node = road.nodes[simIndex]
+                    val currentSpeed = targetSimSpeedKmh.value
+                    _currentSpeedKmh.value = currentSpeed
 
-                    // Run processor
-                    processIncomingLocation(node.latitude, node.longitude, targetSimSpeedKmh)
+                    if (road.nodes.isNotEmpty()) {
+                        // Traverse distance based on exact speed (meters per second)
+                        val speedMs = (currentSpeed * 1000.0) / 3600.0
+                        simDistanceMeters += speedMs
 
-                    // Increment index
-                    simIndex++
-                    if (simIndex >= road.nodes.size) {
-                        // End of road reached. Let's automatically halt and save.
-                        stopTracking(saveAutomatically = true)
-                        break
+                        if (roadLength > 0 && simDistanceMeters >= roadLength) {
+                            // Reached the end of the road!
+                            // Capture final node and stop naturally
+                            val lastNode = road.nodes.last()
+                            processIncomingLocation(lastNode.latitude, lastNode.longitude, currentSpeed)
+                            stopTracking(saveAutomatically = true)
+                            break
+                        }
+
+                        // Interpolate exact coordinate at simDistanceMeters
+                        val (nextPoint, currentIndex) = getPositionAtDistance(road, simDistanceMeters)
+                        simIndex = currentIndex
+
+                        processIncomingLocation(nextPoint.latitude, nextPoint.longitude, currentSpeed)
                     }
                 }
-                delay(1000L) // Refresh rate once per second. High alignment.
+                delay(1000L) // Refresh rate once per second
             }
         }
+    }
+
+    private fun getRoadTotalLengthMeters(road: MockRoad): Double {
+        if (road.nodes.isEmpty()) return 0.0
+        var total = 0.0
+        for (i in 0 until road.nodes.size - 1) {
+            total += road.nodes[i].distanceTo(road.nodes[i + 1]) * 1000.0
+        }
+        return total
+    }
+
+    private fun getPositionAtDistance(road: MockRoad, distanceMeters: Double): Pair<GeoPoint, Int> {
+        if (road.nodes.isEmpty()) return Pair(_currentLocation.value, 0)
+        if (road.nodes.size == 1) return Pair(road.nodes[0], 0)
+
+        var accumulatedDistance = 0.0
+        for (i in 0 until road.nodes.size - 1) {
+            val nodeA = road.nodes[i]
+            val nodeB = road.nodes[i + 1]
+            val segDist = nodeA.distanceTo(nodeB) * 1000.0
+            if (accumulatedDistance + segDist >= distanceMeters) {
+                val remain = distanceMeters - accumulatedDistance
+                val fraction = if (segDist > 0) remain / segDist else 0.0
+                val lat = nodeA.latitude + (nodeB.latitude - nodeA.latitude) * fraction
+                val lng = nodeA.longitude + (nodeB.longitude - nodeA.longitude) * fraction
+                return Pair(GeoPoint(lat, lng), i)
+            }
+            accumulatedDistance += segDist
+        }
+        return Pair(road.nodes.last(), road.nodes.size - 1)
     }
 
     private fun startRecordingTimer() {
@@ -526,6 +572,19 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
                     val geo = GeoPoint(location.latitude, location.longitude)
                     _currentLocation.value = geo
                     Log.d("RouteViewModel", "Fetched startup location: $geo")
+                } else {
+                    // Cache is empty; actively request a single high-accuracy location update to lock position instantly
+                    val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+                        .setMaxUpdates(1)
+                        .build()
+                    val callback = object : LocationCallback() {
+                        override fun onLocationResult(result: LocationResult) {
+                            val loc = result.lastLocation ?: return
+                            _currentLocation.value = GeoPoint(loc.latitude, loc.longitude)
+                            client.removeLocationUpdates(this)
+                        }
+                    }
+                    client.requestLocationUpdates(locationRequest, callback, Looper.getMainLooper())
                 }
             }
         } catch (e: Exception) {

@@ -97,10 +97,8 @@ fun RouteTrackerApp(
     val overlayRoute by viewModel.overlayRoute.collectAsState()
 
     // Local configuration controllers
-    var isLiveGpsSelected by remember { mutableStateOf(true) }
     var zoomScale by remember { mutableStateOf(240000f) }
     var autoCenterMap by remember { mutableStateOf(true) }
-    var selectRoadDropdownExpanded by remember { mutableStateOf(false) }
     var showHistorySheet by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var customSaveName by remember { mutableStateOf("") }
@@ -145,7 +143,7 @@ fun RouteTrackerApp(
         }
     }
 
-    // Function to initiate tracking
+    // Function to initiate tracking (always uses real GPS - no simulation!)
     val initiateTracking: () -> Unit = {
         val hasFine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val hasCoarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -177,6 +175,8 @@ fun RouteTrackerApp(
             overlayRoutePoints = overlayRoute?.getPoints(),
             zoomScale = zoomScale,
             autoCenter = autoCenterMap,
+            onMapDragged = { autoCenterMap = false },
+            onReCenter = { autoCenterMap = true },
             modifier = Modifier.fillMaxSize()
         )
 
@@ -194,7 +194,7 @@ fun RouteTrackerApp(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Route Selection Dropdown Trigger Card
+                // GPS Tracker Title Card
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = Color(0xFAFFFFFF)),
@@ -203,59 +203,29 @@ fun RouteTrackerApp(
                         .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(16.dp))
                         .testTag("route_selector")
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectRoadDropdownExpanded = true }
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(Icons.Default.Map, contentDescription = "Map Select", tint = Color(0xFF1A73E8))
-                            Column {
-                                Text(
-                                    text = "選択中のマップ",
-                                    fontSize = 10.sp,
-                                    color = Color(0xFF64748B)
-                                )
-                                Text(
-                                    text = selectedRoad.name.substringBefore(" ("),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF0F172A),
-                                    maxLines = 1
-                                )
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", tint = Color(0xFF0F172A))
-                        }
-
-                        // Preset Roads Dropdown Menu
-                        DropdownMenu(
-                            expanded = selectRoadDropdownExpanded,
-                            onDismissRequest = { selectRoadDropdownExpanded = false },
-                            modifier = Modifier
-                                .background(Color.White)
-                                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
-                        ) {
-                            viewModel.availableRoads.forEach { road ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = road.name,
-                                            color = if (road.id == selectedRoad.id) Color(0xFF1A73E8) else Color(0xFF0F172A),
-                                            fontWeight = if (road.id == selectedRoad.id) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    },
-                                    onClick = {
-                                        viewModel.selectRoad(road)
-                                        selectRoadDropdownExpanded = false
-                                        Toast.makeText(context, "${road.name.substringBefore(" (")} コースを選択", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
+                        Icon(
+                            imageVector = Icons.Default.MyLocation,
+                            contentDescription = "GPS Tracker",
+                            tint = Color(0xFF1A73E8)
+                        )
+                        Column {
+                            Text(
+                                text = "軌跡計測モード",
+                                fontSize = 10.sp,
+                                color = Color(0xFF64748B)
+                            )
+                            Text(
+                                text = "リアルGPS軌跡レコーダー",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A),
+                                maxLines = 1
+                            )
                         }
                     }
                 }
