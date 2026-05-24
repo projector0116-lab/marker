@@ -1075,6 +1075,7 @@ fun ScenicMapView(
             label = "alpha"
         )
 
+        /*
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
@@ -1116,6 +1117,7 @@ fun ScenicMapView(
                 center = currentBeaconPt
             )
         }
+        */
 
         // ==========================================
         // COGNITIVE METRICS OVERLAYS & CONTROLS HUD
