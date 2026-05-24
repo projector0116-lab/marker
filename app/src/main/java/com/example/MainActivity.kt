@@ -178,12 +178,19 @@ fun RouteTrackerApp(
         if (hasFine || hasCoarse) {
             viewModel.fetchCurrentLocationOnce(context)
         } else {
-            locationPermissionLauncher.launch(
+            val arr = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    "android.permission.POST_NOTIFICATIONS"
+                )
+            } else {
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
-            )
+            }
+            locationPermissionLauncher.launch(arr)
         }
     }
 
@@ -194,12 +201,19 @@ fun RouteTrackerApp(
         if (hasFine || hasCoarse) {
             viewModel.startTracking(context, useLiveGps = true)
         } else {
-            locationPermissionLauncher.launch(
+            val arr = if (android.os.Build.VERSION.SDK_INT >= 33) {
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    "android.permission.POST_NOTIFICATIONS"
+                )
+            } else {
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION
                 )
-            )
+            }
+            locationPermissionLauncher.launch(arr)
         }
     }
 
@@ -1045,7 +1059,7 @@ fun RouteTrackerApp(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)), // Deep premium dark theme
                     modifier = Modifier
                         .align(Alignment.BottomStart)
-                        .padding(start = 16.dp, bottom = 120.dp) // Offset above pedal/simulation tray
+                        .padding(start = 16.dp, bottom = 240.dp) // Offset above pedal/simulation tray
                         .width(115.dp)
                         .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
                         .testTag("speedometer")
@@ -1126,7 +1140,7 @@ fun RouteTrackerApp(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 16.dp, bottom = 120.dp)
+                        .padding(end = 16.dp, bottom = 240.dp)
                         .width(160.dp)
                         .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
                         .testTag("dashboard_hud")
@@ -1185,7 +1199,7 @@ fun RouteTrackerApp(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 120.dp)
+                    .padding(start = 16.dp, bottom = 240.dp)
                     .width(180.dp)
                     .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
             ) {
@@ -1242,7 +1256,7 @@ fun RouteTrackerApp(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 120.dp)
+                    .padding(end = 16.dp, bottom = 240.dp)
                     .width(180.dp)
                     .border(2.dp, Color(0xFF334155), RoundedCornerShape(20.dp))
             ) {

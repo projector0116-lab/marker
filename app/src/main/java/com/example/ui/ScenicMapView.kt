@@ -1069,51 +1069,6 @@ fun ScenicMapView(
 
             val currentBeaconPt = project(currentLocation.latitude, currentLocation.longitude)
 
-            // Dynamic highway driving target/lock HUD crosshair showing the snapped road center exactly
-            if (gpsStatus == GpsStatus.EXCELLENT) {
-                // Outer dashed target lock ring
-                drawCircle(
-                    color = Color(0xFFE11D48), // Neon crimson lock target
-                    radius = 22.dp.toPx(),
-                    center = currentBeaconPt,
-                    style = Stroke(
-                        width = 1.5.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
-                    )
-                )
-
-                // High-fidelity target intersecting crosshairs
-                drawLine(
-                    color = Color(0xFFE11D48),
-                    start = Offset(currentBeaconPt.x - 26.dp.toPx(), currentBeaconPt.y),
-                    end = Offset(currentBeaconPt.x + 26.dp.toPx(), currentBeaconPt.y),
-                    strokeWidth = 1.5.dp.toPx()
-                )
-                drawLine(
-                    color = Color(0xFFE11D48),
-                    start = Offset(currentBeaconPt.x, currentBeaconPt.y - 26.dp.toPx()),
-                    end = Offset(currentBeaconPt.x, currentBeaconPt.y + 26.dp.toPx()),
-                    strokeWidth = 1.5.dp.toPx()
-                )
-
-                // Visual reading label
-                drawIntoCanvas { canvas ->
-                    val lockTxtPaint = Paint().apply {
-                        color = android.graphics.Color.parseColor("#E11D48")
-                        textSize = 21f
-                        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                        textAlign = Paint.Align.CENTER
-                        setShadowLayer(4f, 0f, 2f, android.graphics.Color.WHITE)
-                    }
-                    canvas.nativeCanvas.drawText(
-                        "車道中央ロック (Snapped)",
-                        currentBeaconPt.x,
-                        currentBeaconPt.y - 30.dp.toPx(),
-                        lockTxtPaint
-                    )
-                }
-            }
-
             // Dynamic GPS beacon circles
             drawCircle(
                 color = Color(0xFF10B981).copy(alpha = animatedAlpha),

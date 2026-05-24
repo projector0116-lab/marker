@@ -34,6 +34,8 @@ enum class GpsStatus {
 
 class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
 
+    private var appContext: Context? = null
+
     // Preset roads available for driving simulation/snapping demo
     val availableRoads = NavigationEngine.PRESET_ROADS
     val selectedRoad = MutableStateFlow<MockRoad>(availableRoads[0])
@@ -214,7 +216,10 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             return // Already tracking
         }
 
-        // Initialize state
+        // Initialize state & service
+        this.appContext = context.applicationContext
+        com.example.util.TrackingService.startService(context)
+
         _gpsStatus.value = if (isSnapped.value) GpsStatus.EXCELLENT else GpsStatus.RAW_ONLY
         _recordedPath.value = emptyList()
         _totalDistanceKm.value = 0.0
@@ -265,7 +270,10 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         _gpsStatus.value = GpsStatus.STOPPED
         _currentSpeedKmh.value = 0.0
 
-        // Shutdown jobs
+        // Shutdown jobs & service
+        appContext?.let {
+            com.example.util.TrackingService.stopService(it)
+        }
         trackingTimerJob?.cancel()
         simulationJob?.cancel()
         isSimulationRunning = false
@@ -342,7 +350,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     @SuppressLint("MissingPermission")
     private fun startRealGpsTracking(context: Context) {
         try {
-            fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            fusedLocationClient = LocationServices.getFusedLocationProviderClient(context.applicationContext)
             val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500L)
                 .setMinUpdateIntervalMillis(1000L)
                 .build()
