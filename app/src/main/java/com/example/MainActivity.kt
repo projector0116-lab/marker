@@ -97,6 +97,7 @@ fun RouteTrackerApp(
     val isAutoTunnelEnabled by viewModel.isAutoTunnelEnabled.collectAsState()
     val savedRoutes by viewModel.savedRoutesHistory.collectAsState()
     val overlayRoute by viewModel.overlayRoute.collectAsState()
+    val bearing by viewModel.bearing.collectAsState()
 
     // Local configuration controllers
     val sharedPrefs = remember { context.getSharedPreferences("route_tracker_settings", android.content.Context.MODE_PRIVATE) }
@@ -233,6 +234,7 @@ fun RouteTrackerApp(
             overlayRoutePoints = overlayRoute?.getPoints(),
             zoomScale = zoomScale,
             autoCenter = autoCenterMap,
+            bearing = bearing,
             routeColor = resolvedRouteColor,
             onMapDragged = { autoCenterMap = false },
             onReCenter = { autoCenterMap = true },

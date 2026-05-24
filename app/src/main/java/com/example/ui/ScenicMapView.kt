@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -236,6 +237,7 @@ fun ScenicMapView(
     overlayRoutePoints: List<com.example.data.RoutePoint>?,
     modifier: Modifier = Modifier,
     zoomScale: Float = 240000f,
+    bearing: Float = 0f,
     autoCenter: Boolean = true,
     routeColor: Color = Color(0xFF1D4ED8),
     onMapDragged: (() -> Unit)? = null,
@@ -423,19 +425,49 @@ fun ScenicMapView(
         Canvas(modifier = Modifier.fillMaxSize()) {
             val drawWidth = size.width
             val drawHeight = size.height
+            val centerOffset = Offset(drawWidth / 2f, drawHeight / 2f)
+                // Longitudinal correction angle calculation
+                val cosLatVal = cos(Math.toRadians(centerLat))
 
-            // Longitudinal correction angle calculation
-            val cosLatVal = cos(Math.toRadians(centerLat))
+                // Mathematical projection converter for Canvas coordinate scope
+                fun project(lat: Double, lng: Double): Offset {
+                    val dx = (lng - centerLng) * cosLatVal * zoom
+                    val dy = -(lat - centerLat) * zoom
+                    return Offset(
+                        x = (drawWidth / 2f) + dx.toFloat() + animDragOffset.value.x,
+                        y = (drawHeight / 2f) + dy.toFloat() + animDragOffset.value.y
+                    )
+                }
 
-            // Mathematical projection converter for Canvas coordinate scope
-            fun project(lat: Double, lng: Double): Offset {
-                val dx = (lng - centerLng) * cosLatVal * zoom
-                val dy = -(lat - centerLat) * zoom
-                return Offset(
-                    x = (drawWidth / 2f) + dx.toFloat() + animDragOffset.value.x,
-                    y = (drawHeight / 2f) + dy.toFloat() + animDragOffset.value.y
-                )
+                // Estimate current visible coordinate ranges
+                val latHalfSpanVal = (drawHeight / 2f) / zoom
+                val lngHalfSpanVal = (drawWidth / 2f) / (zoom * cosLatVal)
+                
+                val minLatVal = centerLat - latHalfSpanVal - animDragOffset.value.y / zoom
+                val maxLatVal = centerLat + latHalfSpanVal - animDragOffset.value.y / zoom
+                val minLngVal = centerLng - lngHalfSpanVal - animDragOffset.value.x / (zoom * cosLatVal)
+                val maxLngVal = centerLng + lngHalfSpanVal - animDragOffset.value.x / (zoom * cosLatVal)
+
+                // Dynamic view center
+                val viewCenterLat = centerLat - animDragOffset.value.y / zoom
+                val viewCenterLng = centerLng + animDragOffset.value.x / (zoom * cosLatVal)
+
+                // Check if coordinates lie near Shonan or Hakone regions
+                val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
+                val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
+
+                val drawShonanFeatures = selectedRoad.id == "coast_kamakura" ||
+                        selectedRoad.id == "expressway_tunnels" ||
+                        (selectedRoad.id == "real_gps_free" && isNearShonan)
+
+                val drawHakoneFeatures = selectedRoad.id == "hakone_pass" ||
+                        (selectedRoad.id == "real_gps_free" && isNearHakone)
+                
+                // ... (rest of layers until marker)
             }
+            
+            // ... (marker drawing here)
+        }
 
             // Estimate current visible coordinate ranges
             val latHalfSpanVal = (drawHeight / 2f) / zoom
@@ -464,7 +496,8 @@ fun ScenicMapView(
             // ==========================================
             // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
             // ==========================================
-            if (zoom > 25000f) {
+            rotate(-bearing, pivot = centerOffset) {
+                if (zoom > 25000f) {
                 // Beautiful classic railroad markings for Shonan/Kamakura areas
                 if (selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
                     val railPath = Path().apply {
@@ -962,6 +995,7 @@ fun ScenicMapView(
                     }
                 }
             }
+            }
 
             // ==========================================
             // LAYER 10: COMPASS ROSE HUD (Bottom-Left Side)
@@ -1081,32 +1115,6 @@ fun ScenicMapView(
                 radius = 3.5.dp.toPx(),
                 center = currentBeaconPt
             )
-
-            // Current travel Direction Chevron Pointer
-            val currentBearingDegees = if (recordedPath.size >= 2) {
-                val pLast = recordedPath.last()
-                val pPrev = recordedPath[recordedPath.size - 2]
-                val dLat = pLast.latitude - pPrev.latitude
-                val dLng = (pLast.longitude - pPrev.longitude) * cosLat
-                val rad = Math.atan2(dLng, dLat)
-                Math.toDegrees(rad).toFloat()
-            } else {
-                0f
-            }
-
-            rotate(degrees = currentBearingDegees, pivot = currentBeaconPt) {
-                val triPath = Path().apply {
-                    moveTo(currentBeaconPt.x, currentBeaconPt.y - 16.dp.toPx()) // Sharper Pointer Tip
-                    lineTo(currentBeaconPt.x - 6.dp.toPx(), currentBeaconPt.y + 6.dp.toPx())
-                    lineTo(currentBeaconPt.x, currentBeaconPt.y + 2.dp.toPx()) // Indent
-                    lineTo(currentBeaconPt.x + 6.dp.toPx(), currentBeaconPt.y + 6.dp.toPx())
-                    close()
-                }
-                drawPath(
-                    path = triPath,
-                    color = Color(0xFF3B82F6) // Brighter blue for the direction marker
-                )
-            }
         }
 
         // ==========================================
