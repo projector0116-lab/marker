@@ -1055,7 +1055,7 @@ fun ScenicMapView(
             )
         }
     }
-
+}
         // ==========================================
         // COGNITIVE METRICS OVERLAYS & CONTROLS HUD
         // ==========================================
@@ -1253,7 +1253,6 @@ fun ScenicMapView(
                         .background(Color(0xFF3B82F6), androidx.compose.foundation.shape.CircleShape)
                 )
             }
-        }
         }
     }
 }

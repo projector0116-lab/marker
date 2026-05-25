@@ -50,6 +50,12 @@ import com.example.data.RouteDatabase
 import com.example.data.RouteRepository
 import com.example.ui.*
 import com.example.ui.theme.MyApplicationTheme
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.content.Context
+import androidx.core.app.ActivityCompat
 import com.example.util.GeoPoint
 import kotlinx.coroutines.launch
 
@@ -184,12 +190,14 @@ fun RouteTrackerApp(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACTIVITY_RECOGNITION,
                     "android.permission.POST_NOTIFICATIONS"
                 )
             } else {
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACTIVITY_RECOGNITION
                 )
             }
             locationPermissionLauncher.launch(arr)
@@ -207,15 +215,49 @@ fun RouteTrackerApp(
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
                     Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACTIVITY_RECOGNITION,
                     "android.permission.POST_NOTIFICATIONS"
                 )
             } else {
                 arrayOf(
                     Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACTIVITY_RECOGNITION
                 )
             }
             locationPermissionLauncher.launch(arr)
+        }
+    }
+
+    // Step sensor integration (Real Healthcare Data source)
+    val sensorManager = remember { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
+    val stepSensor = remember { sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) }
+    
+    DisposableEffect(isWalkingMode, gpsStatus) {
+        val listener = object : SensorEventListener {
+            private var initialStepCount = -1f
+            override fun onSensorChanged(event: SensorEvent) {
+                if (isWalkingMode && gpsStatus != GpsStatus.STOPPED && gpsStatus != GpsStatus.PAUSED) {
+                    if (initialStepCount < 0) {
+                        initialStepCount = event.values[0]
+                    }
+                    val currentSteps = (event.values[0] - initialStepCount).toInt()
+                    if (currentSteps > 0) {
+                        viewModel.stepCount.value = currentSteps
+                    }
+                } else if (gpsStatus == GpsStatus.STOPPED) {
+                    initialStepCount = -1f
+                }
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        
+        if (isWalkingMode && stepSensor != null) {
+            sensorManager.registerListener(listener, stepSensor, SensorManager.SENSOR_DELAY_UI)
+        }
+        
+        onDispose {
+            sensorManager.unregisterListener(listener)
         }
     }
 
