@@ -11,7 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import android.graphics.Typeface
@@ -251,6 +252,7 @@ fun ScenicMapView(
     
     // Add state for map orientation
     var isHeadingUp by remember { mutableStateOf(false) }
+    var manualRotation by remember { mutableFloatStateOf(0f) }
 
     // Smoothly transition and snap drag offsets back to zero when centering is requested
     LaunchedEffect(autoCenter) {
@@ -331,13 +333,29 @@ fun ScenicMapView(
             .fillMaxSize()
             .background(Color(0xFFEDE9E2)) // Light background
             .pointerInput(Unit) {
-                // Handle smooth manual dragging displacement panning
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    coroutineScope.launch {
-                        animDragOffset.snapTo(animDragOffset.value + dragAmount)
+                detectTransformGestures { _, pan, _, rotation ->
+                    if (pan != Offset.Zero) {
+                        coroutineScope.launch {
+                            animDragOffset.snapTo(animDragOffset.value + pan)
+                        }
+                        onMapDragged?.invoke()
                     }
-                    onMapDragged?.invoke()
+                    if (abs(rotation) > 0.1f) {
+                        if (isHeadingUp) {
+                            // If it was heading-up, initialize manual rotation with current heading
+                            val p1 = recordedPath.lastOrNull()
+                            val p2 = if (recordedPath.size >= 2) recordedPath[recordedPath.size - 2] else null
+                            if (p1 != null && p2 != null) {
+                                val dLat = p1.latitude - p2.latitude
+                                val dLng = (p1.longitude - p2.longitude) * cos(Math.toRadians(p1.latitude))
+                                val rad = Math.atan2(dLng, dLat)
+                                manualRotation = Math.toDegrees(rad).toFloat()
+                            }
+                            isHeadingUp = false
+                        }
+                        manualRotation += rotation
+                        onMapDragged?.invoke()
+                    }
                 }
             }
             .pointerInput(Unit) {
@@ -380,6 +398,8 @@ fun ScenicMapView(
             )
         }
 
+        val effectiveRotation = if (isHeadingUp) currentBearingDegrees else manualRotation
+
         // Estimate current visible coordinate ranges
         val latHalfSpan = (height / 2f) / zoom
         val lngHalfSpan = (width / 2f) / (zoom * cosLat)
@@ -406,8 +426,15 @@ fun ScenicMapView(
         val tileXRange = minTileX..maxTileX.coerceAtMost(minTileX + 8)
         val tileYRange = minTileY..maxTileY.coerceAtMost(minTileY + 8)
 
-        // Render dynamic web map tiles underneath the Canvas overlays
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    rotationZ = -effectiveRotation
+                }
+        ) {
+            // Render dynamic web map tiles underneath the Canvas overlays
+            Box(modifier = Modifier.fillMaxSize()) {
             for (tileY in tileYRange) {
                 for (tileX in tileXRange) {
                     val tileLngStart = tileX.toDouble() * 360.0 / n - 180.0
@@ -472,10 +499,10 @@ fun ScenicMapView(
             val isNearShonan = centerLat in 35.25..35.38 && centerLng in 139.35..139.60
             val isNearHakone = centerLat in 35.15..35.25 && centerLng in 138.95..139.10
 
-            rotate(degrees = -currentBearingDegrees, pivot = Offset(drawWidth / 2f, drawHeight / 2f)) {
-                // ==========================================
-                // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
-                // ==========================================
+            // DRAWING LAYERS
+            // ==========================================
+            // LAYER 3: PRESET RAILWAYS (Enoden & Hakone Line)
+            // ==========================================
                 if (zoom > 25000f) {
                     // Beautiful classic railroad markings for Shonan/Kamakura areas
                     if (selectedRoad.id == "coast_kamakura" || (selectedRoad.id == "real_gps_free" && isNearShonan)) {
@@ -965,10 +992,6 @@ fun ScenicMapView(
                     }
                 }
             }
-        }
-
-
-        // ==========================================
         // LAYER 11: CURRENT GPS BEACON PULSATING RIPPLE
         // ==========================================
         val infiniteTransition = rememberInfiniteTransition(label = "gps_beacon")
@@ -1032,6 +1055,7 @@ fun ScenicMapView(
                 center = currentBeaconPt
             )
         }
+    }
 
         // ==========================================
         // COGNITIVE METRICS OVERLAYS & CONTROLS HUD
@@ -1176,7 +1200,15 @@ fun ScenicMapView(
                 .clip(androidx.compose.foundation.shape.CircleShape)
                 .background(Color.White)
                 .border(1.dp, Color(0x3364748B), androidx.compose.foundation.shape.CircleShape)
-                .clickable { isHeadingUp = !isHeadingUp },
+                .clickable { 
+                    if (isHeadingUp || manualRotation != 0f) {
+                        isHeadingUp = false
+                        manualRotation = 0f
+                    } else {
+                        isHeadingUp = true
+                    }
+                    onReCenter?.invoke()
+                },
             contentAlignment = Alignment.Center
         ) {
             Canvas(modifier = Modifier.size(22.dp)) {
@@ -1184,9 +1216,7 @@ fun ScenicMapView(
                 val center = Offset(size.width / 2, size.height / 2)
                 
                 // Compass Bearing: Point to North
-                // When isHeadingUp is true, map is rotated by -currentBearingDegrees. 
-                // To point North (0 degrees), we rotate the needle by currentBearingDegrees.
-                val needleRotation = currentBearingDegrees
+                val needleRotation = effectiveRotation
                 
                 rotate(needleRotation) {
                     // Needle Shadow
