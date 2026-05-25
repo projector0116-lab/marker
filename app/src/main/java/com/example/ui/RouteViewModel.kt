@@ -68,15 +68,18 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
 
     // Walking Mode configuration
     val isWalkingMode = MutableStateFlow(false)
+    val stepCount = MutableStateFlow(0)
 
     fun toggleWalkingMode() {
         isWalkingMode.value = !isWalkingMode.value
         if (isWalkingMode.value) {
-            // Walking mode often implies we don't want road snapping because people walk on sidewalks
-            // But let's keep it optional.
             targetSimSpeedKmh.value = 5.0 // Walk pace
+            isSnapped.value = false // No road snapping for walking
+            isAutoTunnelEnabled.value = false // No tunnel mode for walking
         } else {
             targetSimSpeedKmh.value = 60.0 // Driving pace
+            isSnapped.value = true
+            isAutoTunnelEnabled.value = true
         }
     }
 
@@ -197,6 +200,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         }
         simIndex = 0
         simDistanceMeters = 0.0
+        stepCount.value = 0
         _currentSpeedKmh.value = 0.0
         _totalDistanceKm.value = 0.0
         _averageSpeedKmh.value = 0.0
@@ -239,6 +243,7 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         _totalDistanceKm.value = 0.0
         _averageSpeedKmh.value = 0.0
         _durationSeconds.value = 0L
+        stepCount.value = 0
 
         // Snap immediately to nearest road center on start
         if (isSnapped.value) {
@@ -432,10 +437,27 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         rawSpeedKmh: Double,
         forceRecord: Boolean = true
     ) {
-        if (_gpsStatus.value == GpsStatus.PAUSED || _gpsStatus.value == GpsStatus.STOPPED) return
-
         var activeRoad = selectedRoad.value
         val incomingGeo = GeoPoint(lat, lng)
+
+        if (_gpsStatus.value == GpsStatus.PAUSED) return
+        
+        if (_gpsStatus.value == GpsStatus.STOPPED) {
+            if (!isWalkingMode.value) {
+                // In Driving Mode, if within 2km of a preset road, auto-snap to it even before starting.
+                // This handles the request to pop to the "middle of the road" from a facility.
+                ensureDynamicRoadNodes(incomingGeo)
+            }
+            
+            // Re-fetch activeRoad in case ensureDynamicRoadNodes changed it
+            val updatedActiveRoad = selectedRoad.value
+            if (isSnapped.value && updatedActiveRoad.nodes.isNotEmpty()) {
+                _currentLocation.value = updatedActiveRoad.snapPoint(incomingGeo)
+            } else {
+                _currentLocation.value = incomingGeo
+            }
+            return
+        }
 
         // Avoid minor stationary GPS telemetry jitter/shaking when sitting inside the house
         if (!isSimulationRunning) {
@@ -449,7 +471,17 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
             }
         }
 
-        // 1. If in real_gps_free mode and snapping is active, dynamically update the virtual road past the driver
+        // 1. Step Count logic for Walking Mode
+        if (isWalkingMode.value && forceRecord) {
+            val prevLoc = _currentLocation.value
+            val distKm = incomingGeo.distanceTo(prevLoc)
+            val steps = (distKm * 1000.0 / 0.8).toInt() // Approx 0.8m per step
+            if (steps >= 1) {
+                stepCount.value += steps
+            }
+        }
+
+        // Rest of the logic...
         if (activeRoad.id == "real_gps_free" && isSnapped.value && _gpsStatus.value != GpsStatus.EXTRAPOLATING_TUNNEL) {
             val currentList = _recordedPath.value
             val heading = if (currentList.size >= 2) {

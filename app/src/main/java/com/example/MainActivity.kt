@@ -98,6 +98,7 @@ fun RouteTrackerApp(
     val savedRoutes by viewModel.savedRoutesHistory.collectAsState()
     val overlayRoute by viewModel.overlayRoute.collectAsState()
     val isWalkingMode by viewModel.isWalkingMode.collectAsState()
+    val stepCount by viewModel.stepCount.collectAsState()
 
     // Local configuration controllers
     val sharedPrefs = remember { context.getSharedPreferences("route_tracker_settings", android.content.Context.MODE_PRIVATE) }
@@ -278,6 +279,7 @@ fun RouteTrackerApp(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier.size(60.dp)
                                 ) {
+                                if (!isWalkingMode) {
                                     CircularProgressIndicator(
                                         progress = { 1f },
                                         modifier = Modifier.fillMaxSize(),
@@ -313,15 +315,23 @@ fun RouteTrackerApp(
                                             color = Color(0xFF94A3B8)
                                         )
                                     }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.DirectionsWalk,
+                                        contentDescription = "Walking",
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
                                 }
 
-                                // ECO Drive Badge
-                                val ecoColor = when {
+                                // ECO Drive Badge or WALK Badge
+                                val badgeColor = if (isWalkingMode) Color(0xFF10B981) else when {
                                     currentSpeedKmh <= 0.1 -> Color(0xFF64748B) // Idle Grey
                                     currentSpeedKmh in 1.0..60.0 -> Color(0xFF10B981) // Vivid Emerald ECO
                                     else -> Color(0xFFF59E0B) // Amber Power
                                 }
-                                val ecoText = when {
+                                val badgeText = if (isWalkingMode) "WALK" else when {
                                     currentSpeedKmh <= 0.1 -> "READY"
                                     currentSpeedKmh in 1.0..60.0 -> "ECO"
                                     else -> "POWER"
@@ -329,15 +339,15 @@ fun RouteTrackerApp(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(ecoColor.copy(alpha = 0.15f))
-                                        .border(1.dp, ecoColor, RoundedCornerShape(6.dp))
+                                        .background(badgeColor.copy(alpha = 0.15f))
+                                        .border(1.dp, badgeColor, RoundedCornerShape(6.dp))
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
                                     Text(
-                                        text = ecoText,
+                                        text = badgeText,
                                         fontSize = 8.sp,
                                         fontWeight = FontWeight.Black,
-                                        color = ecoColor
+                                        color = badgeColor
                                     )
                                 }
                             }
@@ -389,18 +399,32 @@ fun RouteTrackerApp(
                                     )
                                 }
 
-                                // Avg Speed
+                                // Avg Speed or Steps
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(text = "平均速度 (AVG)", fontSize = 8.sp, color = Color(0xFF94A3B8))
-                                    Row(verticalAlignment = Alignment.Bottom) {
-                                        Text(
-                                            text = String.format("%.1f", averageSpeedKmh),
-                                            fontSize = 17.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            fontFamily = FontFamily.Monospace
-                                        )
-                                        Text(text = " km/h", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                    if (!isWalkingMode) {
+                                        Text(text = "平均速度 (AVG)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                        Row(verticalAlignment = Alignment.Bottom) {
+                                            Text(
+                                                text = String.format("%.1f", averageSpeedKmh),
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Text(text = " km/h", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                        }
+                                    } else {
+                                        Text(text = "歩数 (STEPS)", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                        Row(verticalAlignment = Alignment.Bottom) {
+                                            Text(
+                                                text = "$stepCount",
+                                                fontSize = 17.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF10B981),
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Text(text = " 歩", fontSize = 8.sp, color = Color(0xFF94A3B8))
+                                        }
                                     }
                                 }
                             }
@@ -430,12 +454,20 @@ fun RouteTrackerApp(
                     GpsStatus.PAUSED -> Color(0xFFCBD5E1)
                     GpsStatus.STOPPED -> Color(0xFFE2E8F0)
                 }
-                val statusText = when (gpsStatus) {
-                    GpsStatus.EXCELLENT -> "車道中央ロック追従中"
-                    GpsStatus.RAW_ONLY -> "GPS生座標トレース (補正なし)"
-                    GpsStatus.EXTRAPOLATING_TUNNEL -> "トンネル自律補完（GPS補正）🛰️"
-                    GpsStatus.PAUSED -> "記録一時停止中"
-                    GpsStatus.STOPPED -> "待機中 - 端末のGPSで自動追従します"
+                val statusText = if (isWalkingMode) {
+                    when (gpsStatus) {
+                        GpsStatus.STOPPED -> "待機中 - 歩行移動を自動で検知します"
+                        GpsStatus.PAUSED -> "歩行記録一時停止中"
+                        else -> "歩行中 - ルートと歩数を記録しています"
+                    }
+                } else {
+                    when (gpsStatus) {
+                        GpsStatus.EXCELLENT -> "車道中央ロック追従中"
+                        GpsStatus.RAW_ONLY -> "GPS生座標トレース (補正なし)"
+                        GpsStatus.EXTRAPOLATING_TUNNEL -> "トンネル自律補完（GPS補正）🛰️"
+                        GpsStatus.PAUSED -> "記録一時停止中"
+                        GpsStatus.STOPPED -> "待機中 - 端末のGPSで自動追従します"
+                    }
                 }
                 val statusColor = when (gpsStatus) {
                     GpsStatus.EXCELLENT -> Color(0xFF15803D)
@@ -921,7 +953,7 @@ fun RouteTrackerApp(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "ほこう",
+                                            text = "歩行",
                                             color = if (isWalkingMode) Color(0xFF10B981) else Color(0xFF64748B),
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp
