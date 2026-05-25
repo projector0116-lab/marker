@@ -97,6 +97,7 @@ fun RouteTrackerApp(
     val isAutoTunnelEnabled by viewModel.isAutoTunnelEnabled.collectAsState()
     val savedRoutes by viewModel.savedRoutesHistory.collectAsState()
     val overlayRoute by viewModel.overlayRoute.collectAsState()
+    val isWalkingMode by viewModel.isWalkingMode.collectAsState()
 
     // Local configuration controllers
     val sharedPrefs = remember { context.getSharedPreferences("route_tracker_settings", android.content.Context.MODE_PRIVATE) }
@@ -233,7 +234,7 @@ fun RouteTrackerApp(
             overlayRoutePoints = overlayRoute?.getPoints(),
             zoomScale = zoomScale,
             autoCenter = autoCenterMap,
-            routeColor = resolvedRouteColor,
+            routeColor = if (isWalkingMode) Color(0xFF10B981) else resolvedRouteColor,
             onMapDragged = { autoCenterMap = false },
             onReCenter = { autoCenterMap = true },
             modifier = Modifier.fillMaxSize()
@@ -849,7 +850,89 @@ fun RouteTrackerApp(
                 ) {
                     when (gpsStatus) {
                         GpsStatus.STOPPED -> {
-                            // Single full-width Real GPS Hardware Tracker Trigger
+                            // Modes: Drive vs Walk toggle before start
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Driving Mode Toggle
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (!isWalkingMode) Color(0xFFF1F5F9) else Color.White
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(52.dp)
+                                        .clickable { if (isWalkingMode) viewModel.toggleWalkingMode() }
+                                        .border(
+                                            1.5.dp,
+                                            if (!isWalkingMode) Color(0xFF1D4ED8) else Color(0xFFE2E8F0),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DirectionsCar,
+                                            contentDescription = "Driving",
+                                            tint = if (!isWalkingMode) Color(0xFF1D4ED8) else Color(0xFF64748B),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "ドライブ",
+                                            color = if (!isWalkingMode) Color(0xFF1D4ED8) else Color(0xFF64748B),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+
+                                // Walking Mode Toggle
+                                Card(
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isWalkingMode) Color(0xFFF1F5F9) else Color.White
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(52.dp)
+                                        .clickable { if (!isWalkingMode) viewModel.toggleWalkingMode() }
+                                        .border(
+                                            1.5.dp,
+                                            if (isWalkingMode) Color(0xFF10B981) else Color(0xFFE2E8F0),
+                                            RoundedCornerShape(14.dp)
+                                        )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DirectionsWalk,
+                                            contentDescription = "Walking",
+                                            tint = if (isWalkingMode) Color(0xFF10B981) else Color(0xFF64748B),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "ほこう",
+                                            color = if (isWalkingMode) Color(0xFF10B981) else Color(0xFF64748B),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Start Button
                             Button(
                                 onClick = initiateTracking,
                                 shape = RoundedCornerShape(14.dp),

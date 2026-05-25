@@ -463,9 +463,8 @@ fun ScenicMapView(
                     )
                 }
             }
-        }
 
-        Canvas(modifier = Modifier.fillMaxSize()) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
             val drawWidth = size.width
             val drawHeight = size.height
 
@@ -1254,6 +1253,7 @@ fun ScenicMapView(
                         .background(Color(0xFF3B82F6), androidx.compose.foundation.shape.CircleShape)
                 )
             }
+        }
         }
     }
 }

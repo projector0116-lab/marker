@@ -66,6 +66,20 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
     // GPS Snap configuration (Lock to middle of the road)
     val isSnapped = MutableStateFlow(true)
 
+    // Walking Mode configuration
+    val isWalkingMode = MutableStateFlow(false)
+
+    fun toggleWalkingMode() {
+        isWalkingMode.value = !isWalkingMode.value
+        if (isWalkingMode.value) {
+            // Walking mode often implies we don't want road snapping because people walk on sidewalks
+            // But let's keep it optional.
+            targetSimSpeedKmh.value = 5.0 // Walk pace
+        } else {
+            targetSimSpeedKmh.value = 60.0 // Driving pace
+        }
+    }
+
     // Tunnel mode configuration (Auto-detect tunnel segments vs purely manual)
     val isAutoTunnelEnabled = MutableStateFlow(true)
 
@@ -426,7 +440,10 @@ class RouteViewModel(private val repository: RouteRepository) : ViewModel() {
         // Avoid minor stationary GPS telemetry jitter/shaking when sitting inside the house
         if (!isSimulationRunning) {
             val distFromLast = incomingGeo.distanceTo(_currentLocation.value)
-            if (rawSpeedKmh < 1.5 && distFromLast < 0.005) {
+            val speedThreshold = if (isWalkingMode.value) 0.3 else 1.5
+            val distThreshold = if (isWalkingMode.value) 0.001 else 0.005
+            
+            if (rawSpeedKmh < speedThreshold && distFromLast < distThreshold) {
                 // Ignore micro GPS drift updates when stationary
                 return
             }
