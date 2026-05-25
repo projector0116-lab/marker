@@ -280,6 +280,7 @@ fun RouteTrackerApp(
             routeColor = if (isWalkingMode) Color(0xFF10B981) else resolvedRouteColor,
             onMapDragged = { autoCenterMap = false },
             onReCenter = { autoCenterMap = true },
+            onStartRecording = initiateTracking,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -1006,38 +1007,38 @@ fun RouteTrackerApp(
 
                             Spacer(modifier = Modifier.height(4.dp))
 
-                            // Start Button
+                            // Start Button (Prominent START action)
                             Button(
                                 onClick = initiateTracking,
                                 shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC20505)),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)), // Emerald Green for "START"
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(52.dp)
+                                    .height(56.dp)
                                     .testTag("start_recording_button")
                             ) {
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.MyLocation,
-                                        contentDescription = "GPS",
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "START",
                                         tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                     Column(horizontalAlignment = Alignment.Start) {
                                         Text(
-                                            text = "リアルGPS計測を開始する",
+                                            text = "記録を開始する (START)",
                                             color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 15.sp,
                                             maxLines = 1
                                         )
                                         Text(
-                                            text = "スマートGPS補完・車道中央ロック付きで追従が働きます",
-                                            color = Color.White.copy(alpha = 0.85f),
-                                            fontSize = 9.sp,
+                                            text = "リアルタイムGPS追従・歩数カウントを開始します",
+                                            color = Color.White.copy(alpha = 0.9f),
+                                            fontSize = 10.sp,
                                             maxLines = 1
                                         )
                                     }

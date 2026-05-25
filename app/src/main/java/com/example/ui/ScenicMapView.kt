@@ -243,7 +243,8 @@ fun ScenicMapView(
     autoCenter: Boolean = true,
     routeColor: Color = Color(0xFF1D4ED8),
     onMapDragged: (() -> Unit)? = null,
-    onReCenter: (() -> Unit)? = null
+    onReCenter: (() -> Unit)? = null,
+    onStartRecording: (() -> Unit)? = null
 ) {
     val coroutineScope = rememberCoroutineScope()
     
@@ -427,44 +428,46 @@ fun ScenicMapView(
         val tileYRange = minTileY..maxTileY.coerceAtMost(minTileY + 8)
 
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    rotationZ = -effectiveRotation
-                }
+            modifier = Modifier.fillMaxSize()
         ) {
             // Render dynamic web map tiles underneath the Canvas overlays
-            Box(modifier = Modifier.fillMaxSize()) {
-            for (tileY in tileYRange) {
-                for (tileX in tileXRange) {
-                    val tileLngStart = tileX.toDouble() * 360.0 / n - 180.0
-                    val tileLngEnd = (tileX + 1).toDouble() * 360.0 / n - 180.0
-                    val tileLatStart = java.lang.Math.toDegrees(java.lang.Math.atan(java.lang.Math.sinh(java.lang.Math.PI * (1.0 - 2.0 * tileY.toDouble() / n))))
-                    val tileLatEnd = java.lang.Math.toDegrees(java.lang.Math.atan(java.lang.Math.sinh(java.lang.Math.PI * (1.0 - 2.0 * (tileY + 1).toDouble() / n))))
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        rotationZ = -effectiveRotation
+                    }
+            ) {
+                for (tileY in tileYRange) {
+                    for (tileX in tileXRange) {
+                        val tileLngStart = tileX.toDouble() * 360.0 / n - 180.0
+                        val tileLngEnd = (tileX + 1).toDouble() * 360.0 / n - 180.0
+                        val tileLatStart = java.lang.Math.toDegrees(java.lang.Math.atan(java.lang.Math.sinh(java.lang.Math.PI * (1.0 - 2.0 * tileY.toDouble() / n))))
+                        val tileLatEnd = java.lang.Math.toDegrees(java.lang.Math.atan(java.lang.Math.sinh(java.lang.Math.PI * (1.0 - 2.0 * (tileY + 1).toDouble() / n))))
 
-                    val pTopLeft = project(tileLatStart, tileLngStart)
-                    val pBottomRight = project(tileLatEnd, tileLngEnd)
+                        val pTopLeft = project(tileLatStart, tileLngStart)
+                        val pBottomRight = project(tileLatEnd, tileLngEnd)
 
-                    val tileW = pBottomRight.x - pTopLeft.x
-                    val tileH = pBottomRight.y - pTopLeft.y
+                        val tileW = pBottomRight.x - pTopLeft.x
+                        val tileH = pBottomRight.y - pTopLeft.y
 
-                    val tileWDp = with(density) { tileW.coerceAtLeast(0f).toDp() }
-                    val tileHDp = with(density) { tileH.coerceAtLeast(0f).toDp() }
-                    val tileOffsetX = with(density) { pTopLeft.x.toDp() }
-                    val tileOffsetY = with(density) { pTopLeft.y.toDp() }
+                        val tileWDp = with(density) { tileW.coerceAtLeast(0f).toDp() }
+                        val tileHDp = with(density) { tileH.coerceAtLeast(0f).toDp() }
+                        val tileOffsetX = with(density) { pTopLeft.x.toDp() }
+                        val tileOffsetY = with(density) { pTopLeft.y.toDp() }
 
-                    AsyncImage(
-                        model = "https://cyberjapandata.gsi.go.jp/xyz/std/$osmZoom/$tileX/$tileY.png", // Geospatial Information Authority of Japan (GSI): Clean, precise official maps of Japan, no shop names!
-                        contentDescription = null,
-                        modifier = Modifier
-                            .absoluteOffset(x = tileOffsetX, y = tileOffsetY)
-                            .requiredSize(width = tileWDp, height = tileHDp),
-                        contentScale = ContentScale.FillBounds
-                    )
+                        AsyncImage(
+                            model = "https://cyberjapandata.gsi.go.jp/xyz/std/$osmZoom/$tileX/$tileY.png", // Geospatial Information Authority of Japan (GSI): Clean, precise official maps of Japan, no shop names!
+                            contentDescription = null,
+                            modifier = Modifier
+                                .absoluteOffset(x = tileOffsetX, y = tileOffsetY)
+                                .requiredSize(width = tileWDp, height = tileHDp),
+                            contentScale = ContentScale.FillBounds
+                        )
+                    }
                 }
-            }
 
-            Canvas(modifier = Modifier.fillMaxSize()) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
             val drawWidth = size.width
             val drawHeight = size.height
 
@@ -1055,10 +1058,50 @@ fun ScenicMapView(
             )
         }
     }
-}
-        // ==========================================
-        // COGNITIVE METRICS OVERLAYS & CONTROLS HUD
-        // ==========================================
+
+    // ==========================================
+    // COGNITIVE METRICS OVERLAYS & CONTROLS HUD
+    // ==========================================
+
+    // 1. Prominent START OVERLAY when in STOPPED state
+    if (gpsStatus == GpsStatus.STOPPED) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 260.dp) // Offset above the bottom console
+        ) {
+            Card(
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF10B981)), // Emerald
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                modifier = Modifier
+                    .wrapContentSize()
+                    .clickable { onStartRecording?.invoke() } 
+                    .graphicsLayer {
+                        // Subtle pulsating effect could go here
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = "Start",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "ここから開始",
+                        color = Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+    }
 
         // Coordinates Panel Card (Top-right) - Safely offset vertically to stop clashing with top controls
         Card(
@@ -1255,4 +1298,5 @@ fun ScenicMapView(
             }
         }
     }
+}
 }
